@@ -105,6 +105,7 @@ def Surface_filling_in_(dt, Boundary, S_filling_ins, output_signal_sf, X_input, 
         output.append((S_filling_in + (-80) * S_filling_in + s_with_p[i] + 100 * X_input[i] * (1 + output_signal_sf) - S_filling_in * Rwhere) * dt)
     return output
 
+#A22
 def Surface_filling_in(dt, Boundary_diffusionP, S_filling_ins, output_signal_sf, X_input, Rwhere=0):
     output = []
     for i  in range(len(S_filling_ins)):
@@ -157,7 +158,7 @@ def main():
             #A27
             Cij = Surface_contours(Object_surface_ons, Object_surface_offs)
             # type_input(Cij, "Cij", 1) 
-            M = 0
+        M = 0
         Boundary = Boundaries(Z, Cij, M)
         # type_input(Boundary, "Boundary", 1) 
         #A24

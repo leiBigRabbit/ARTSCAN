@@ -9,7 +9,7 @@ def habituative_transmitter(dt, K_e, Y_ij, C_ij, inter_value):
     Y_ij = Y_ij + dt * (K_e * (2 - Y_ij - 3 * 10 ** 6 * Y_ij * (half_rectified(C_ij) + 625 * inter_value)))
     return Y_ij
 
-#A43
+#A43 #******M待补充
 def  Eye_movements_map(dt, E_ij, C_ij, Y_ij, M=0):
     K_kernel = gaussianKernel(3, 5, 1/(50*np.pi))
     J_kernel = gaussianKernel(3, 1, 1/(2*np.pi))
@@ -29,5 +29,4 @@ def  Eye_movements_map(dt, E_ij, C_ij, Y_ij, M=0):
     if EIJ>0.58:
         max_place = (Eij==torch.max(Eij)).nonzero()[0]
         output[max_place[0]][max_place[1]][max_place[2]][max_place[3]] = EIJ
-    # Eij = torch.where(Eij >= 0.58, Eij, 0.0)  
     return output, Eij, y_ij

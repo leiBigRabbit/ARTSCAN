@@ -11,6 +11,9 @@ from utils.conv2d import gaussianconv_2d, Gabor_conv, GaussianBlur
 from utils.kernel import Gabor_filter, gaussianKernel, getGaussianKernel
 from utils.utils import half_rectified, type_input, data_process
 from eye_movements import Eye_movements_map
+from Spatial_attentional import attention_shroud
+from gain import Gain_field
+from what_stream import Vector_Bq
 
 #A6 surface contours
 def Surface_contours(Object_surface_ons, Object_surface_offs):
@@ -158,12 +161,16 @@ def main():
             #A27
             Cij = Surface_contours(Object_surface_ons, Object_surface_offs)
             # type_input(Cij, "Cij", 1) 
+            Eij, Y_ij = torch.zeros(Z[0].shape), torch.zeros(Z[0].shape)
+            Amn = torch.zeros(Z[0].shape)
         M = 0
         Boundary = Boundaries(Z, Cij, M)
+        Bq = Vector_Bq(Boundary[2])
         # type_input(Boundary, "Boundary", 1) 
         #A24
         # Pboundary_gated_diffusion = Boundary_diffusion(Binit)
         #A22
+        #A23
         if t < 20:
             output_signal_sf = 0 
             Rwhere=0
@@ -179,11 +186,12 @@ def main():
         Cij = Surface_contours(Object_surface_ons, Object_surface_offs)
         type_input(Cij, str(t), 1) 
         #A43
-        if t == 1:
-            Eij, Y_ij = torch.zeros(Z[0].shape), torch.zeros(Z[0].shape)
-        EIJ, Eij, Y_ij = Eye_movements_map(dt, Eij, Cij, Y_ij, M=0)
-        #A48
-        # W = 
+        EIJ, Eij, Y_ij, max_place = Eye_movements_map(dt, Eij, Cij, Y_ij, M=0)
+        #A34  max_place, Amn
+        #临时定义
+        max_place = [0,0,50,150]
+        SFmn, AImn = Gain_field(S_ij, max_place, Amn)
+
 
 if __name__ == "__main__":
     main()

@@ -55,7 +55,7 @@ def GaussianBlur(batch_img, ksize, sigmac, sigmas):
     kernel_G = gaussianKernel(500, 6, 1)
     # plt.subplot(4, 3, 1)   #plt.subplot(nrows, ncols, index)
     # plt.imshow(kernel_G+1)
-    kernel_c, kernel_s = getGaussianKernel(ksize, sigmac, sigmas) # 生成权重积核    
+    kernel_c, kernel_s = getGaussianKernel(ksize, sigmac, sigmas) # 生成权重积核
     B, C, H, W = batch_img.shape # C：图像通道数，group convolution 要用到# 生成 group convolution 的卷积核    
     weighted_pixs_on = []
     weighted_pixs_off = []

@@ -29,4 +29,4 @@ def  Eye_movements_map(dt, E_ij, C_ij, Y_ij, M=0):
     if EIJ>0.58:
         max_place = (Eij==torch.max(Eij)).nonzero()[0]
         output[max_place[0]][max_place[1]][max_place[2]][max_place[3]] = EIJ
-    return output, Eij, y_ij
+    return output, Eij, y_ij, max_place

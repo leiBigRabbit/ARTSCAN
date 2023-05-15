@@ -141,7 +141,7 @@ def complex_cells(Y_ons, Y_offs):
 def main():
     global dt
     dt = 0.05
-    img = data_process("/Users/leilei/Desktop/ARTSCAN/image1.jpg")
+    img = data_process("/Users/leilei/Desktop/ARTSCAN/image.jpg")
     #A.1. Retina and LGN cells
     imgsc_on, imgsc_off = GaussianBlur(img, [5,17,41], sigmac = [0.3, 0.75, 2], sigmas = [1, 3, 7])
     #A.2. V1 polarity-sensitive oriented simple cells
@@ -165,11 +165,12 @@ def main():
             Amn = torch.zeros(Z[0].shape)
         M = 0
         Boundary = Boundaries(Z, Cij, M)
+        type_input(Boundary, "Boundary", 1) 
         Bq = Vector_Bq(Boundary[2])
         
-        model = fuzzy_ART(X_size=100, c_max=100, rho=0.85, alpha=0.00001, beta=1)
-        model.train(Bq)
-
+        model = fuzzy_ART(X_size=100 * 100, c_max=100, rho=0.85, alpha=0.00001, beta=1)
+        _,_,W = model.train_batch(Bq)
+        
         
         # type_input(Boundary, "Boundary", 1) 
         #A24

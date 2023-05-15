@@ -131,7 +131,7 @@ class fuzzy_ART:
         if X_dtype=="cpu":
             I = X.to(device)
             # I=torch.from_numpy(X).to(device)
-        # I = torch.hstack((X, 1-X))
+        I = torch.hstack((X, 1-X))
         return I
 
     def train(self, X, X_dtype="cpu"):
@@ -139,7 +139,7 @@ class fuzzy_ART:
         match_num=0
         batch_num=np.array(I.shape)[1]
         for batch_id in range(batch_num):
-            A=I[batch_id]       
+            A=I[0][batch_id]       
             #A55                             #[cmax,feature_num]
             xa_mod=torch.sum(torch.minimum(A, self.W),dim=1)  
             T=xa_mod/(self.alpha + torch.sum(self.W, dim=1))       #[cmax]
@@ -194,7 +194,9 @@ class fuzzy_ART:
                 d = vigilance[batch_id][J].cpu()
                 if d >= self.rho: # resonance occured
                     if self.self_supervision:
-                        self.W[J,:] = self.beta*I[batch_id] + (1-self.beta)*self.W[J,:] # weight update
+                        input = torch.minimum(I[batch_id], self.W[J,:])
+                        self.W[J,:] = self.beta*input + (1-self.beta)*self.W[J,:] # weight update
+                        # self.W[J,:] = self.beta*I[batch_id] + (1-self.beta)*self.W[J,:] # weight update
                     match_flag=True
                     match_num+=1
                     break
@@ -208,7 +210,7 @@ class fuzzy_ART:
                 self.N += 1
                 match_num+=1
             else:
-                self.rho-=self.rho/10.
+                # self.rho-=self.rho/10.
                 print("ART memory over! ",self.rho)
 
 
@@ -229,8 +231,8 @@ class fuzzy_ART:
         '''
         
         if match_num==len(J_list):
-            return True,match_num*1.0/len(J_list)
-        return False,match_num*1.0/len(J_list)
+            return True,match_num*1.0/len(J_list), self.W
+        return False, match_num*1.0/len(J_list)
     
     def infer(self, X, X_dtype="cpu",rtl=False): # rtl : real-time learning (learning while inferring)
         I = self.complement_code(X,self.device,X_dtype) 

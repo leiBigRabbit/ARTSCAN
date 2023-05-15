@@ -1,14 +1,21 @@
 import torch
 import numpy as np
 from fuzzy_ART import fuzzy_ART
+from utils.utils import half_rectified, type_input, data_process
 #A54/53
 def Vector_Bq(input):
-    uboundary_on = torch.where(input <= 0, 0, 1)
-    uboundary_off = 1 - input
-    uboundary_on = uboundary_on.reshape(1, 25, 100, 100)
-    uboundary_off = uboundary_off.reshape(1, 25, 100, 100)
-    input = input.reshape(1, 25, 100, 100)
-    output = input * uboundary_on, uboundary_on * uboundary_off
-    output = torch.cat(output,dim=2).reshape(1, 25, 2, 100,100)
+    # input = torch.where(input <= 0, 0, 1)  #A54
+    input = torch.cat(torch.split(input[0][0], 100, 0),dim=1)
+    output = torch.split(input, 100, 1)
+    output = torch.cat([fm.unsqueeze(0).reshape(-1,10000) for fm in output], dim=0)
+
+    # input_u = torch.where(input <= 0, 0, 1)
+    # input_u = torch.split(input_u, 100, 1)
+    # input_u = torch.cat([fm.unsqueeze(0).reshape(fm.shape[0]*fm.shape[1]) for fm in input_u], dim=0).squeeze(0)
+
+    # output = input
     return output
-# model = fuzzy_ART(x_size=(100,100), c_max=100, rho=0.85, alpha=0.00001, beta=1)
+
+def activity_V(Bq, Wq, sigma, V_jq):
+    Bq = torch.sum(torch.minimum(Bq, Wq))
+    Vjq = (1 + )

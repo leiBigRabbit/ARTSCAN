@@ -14,7 +14,7 @@ from eye_movements import Eye_movements_map
 from Spatial_attentional import attention_shroud
 from gain import Gain_field
 from what_stream import Vector_Bq
-
+from fuzzy_ART import fuzzy_ART
 #A6 surface contours
 def Surface_contours(Object_surface_ons, Object_surface_offs):
     Jpq_on = 0.8 * Object_surface_ons[0] + 0.1 * Object_surface_ons[1] + 0.1 * Object_surface_ons[2]
@@ -166,6 +166,11 @@ def main():
         M = 0
         Boundary = Boundaries(Z, Cij, M)
         Bq = Vector_Bq(Boundary[2])
+        
+        model = fuzzy_ART(X_size=100, c_max=100, rho=0.85, alpha=0.00001, beta=1)
+        model.train(Bq)
+
+        
         # type_input(Boundary, "Boundary", 1) 
         #A24
         # Pboundary_gated_diffusion = Boundary_diffusion(Binit)

@@ -9,6 +9,6 @@ def Vector_Bq(input):
     uboundary_off = uboundary_off.reshape(1, 25, 100, 100)
     input = input.reshape(1, 25, 100, 100)
     output = input * uboundary_on, uboundary_on * uboundary_off
-    output = torch.cat(output,dim=2)
+    output = torch.cat(output,dim=2).reshape(1, 25, 2, 100,100)
     return output
 # model = fuzzy_ART(x_size=(100,100), c_max=100, rho=0.85, alpha=0.00001, beta=1)

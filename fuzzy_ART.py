@@ -231,7 +231,7 @@ class fuzzy_ART:
         '''
         
         if match_num==len(J_list):
-            return True,match_num*1.0/len(J_list), self.W
+            return True,match_num*1.0/len(J_list), self.W, I
         return False, match_num*1.0/len(J_list)
     
     def infer(self, X, X_dtype="cpu",rtl=False): # rtl : real-time learning (learning while inferring)

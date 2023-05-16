@@ -13,8 +13,10 @@ from utils.utils import half_rectified, type_input, data_process
 from eye_movements import Eye_movements_map
 from Spatial_attentional import attention_shroud
 from gain import Gain_field
-from what_stream import Vector_Bq
+from what_stream import Vector_Bq, activity_V
 from fuzzy_ART import fuzzy_ART
+
+
 #A6 surface contours
 def Surface_contours(Object_surface_ons, Object_surface_offs):
     Jpq_on = 0.8 * Object_surface_ons[0] + 0.1 * Object_surface_ons[1] + 0.1 * Object_surface_ons[2]
@@ -146,7 +148,7 @@ def main():
     imgsc_on, imgsc_off = GaussianBlur(img, [5,17,41], sigmac = [0.3, 0.75, 2], sigmas = [1, 3, 7])
     #A.2. V1 polarity-sensitive oriented simple cells
     #A13
-    Y_ons, Y_offs = Gabor_conv(imgsc_on, imgsc_off, sigmav= [3, 4.5, 6], sigmah = [1, 1.5, 2], Lambda = [3, 5, 7], angles = [0, 45, 90, 135], K_size = [(19,5), (29,7), (39,9)])
+    Y_ons, Y_offs = Gabor_conv(imgsc_on, imgsc_off, sigmav= [3, 4.5, 6], sigmah = [1, 1.5, 2], Lambda = [3, 5, 7], angles = [0, 45, 90, 135], K_size = [(19,19), (29,29), (39,39)])
     # type_input(Y_offs, "Y_offs", 1)
     #A16
     Z = complex_cells(Y_ons, Y_offs)
@@ -163,14 +165,16 @@ def main():
             # type_input(Cij, "Cij", 1) 
             Eij, Y_ij = torch.zeros(Z[0].shape), torch.zeros(Z[0].shape)
             Amn = torch.zeros(Z[0].shape)
+            Vjq = 0
         M = 0
         Boundary = Boundaries(Z, Cij, M)
         type_input(Boundary, "Boundary", 1) 
-        Bq = Vector_Bq(Boundary[2])
+        B_q = Vector_Bq(Boundary[2])
         
         model = fuzzy_ART(X_size=100 * 100, c_max=100, rho=0.85, alpha=0.00001, beta=1)
-        _,_,W = model.train_batch(Bq)
-        
+        _, _, W, Bq = model.train_batch(B_q)
+        Vjq = activity_V(Bq, W, 0.00001, Vjq)
+
         
         # type_input(Boundary, "Boundary", 1) 
         #A24

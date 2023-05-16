@@ -17,5 +17,7 @@ def Vector_Bq(input):
     return output
 
 def activity_V(Bq, Wq, sigma, V_jq):
+    Wq = torch.cat(Wq, 1-Wq)
     Bq = torch.sum(torch.minimum(Bq, Wq))
-    Vjq = (1 + )
+    Vjq = (1 + 0.1 * V_jq) * Bq / (sigma + Wq)
+    return Vjq

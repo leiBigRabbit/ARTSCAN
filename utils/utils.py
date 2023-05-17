@@ -1,6 +1,7 @@
 import torch
 import cv2
 import numpy as np
+import torch.nn.functional as F
 
 def write_img(input, name, devide):
     name = "/Users/leilei/Desktop/artimg/" + name
@@ -34,7 +35,11 @@ def type_input(inputs, name, devide):
 
 
 def  half_rectified(input):
-    output = torch.where(input < 0, 0, input)
+    output = torch.where(input < 0, 0 * input, input)
+    return output
+
+def half_rectified_relu(input):
+    output = F.relu(input)
     return output
 
 #A38

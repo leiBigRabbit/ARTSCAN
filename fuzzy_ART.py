@@ -124,9 +124,9 @@ class fuzzy_ART:
         self.self_supervision=self_supervision
         
         self.N = 0         # no. of categories initialized to zero
-        self.W = torch.ones( (c_max, self.M*2) ).to(self.device) # initialize weigts with 1s
+        self.W = torch.ones( (self.c_max, self.M*2) ).to(self.device) # initialize weigts with 1s
         self.I_sum=torch.tensor([X_size]).to(self.device)
-    
+        self.V = torch.zeros( (self.c_max, self.M*2) ).to(self.device)
     def complement_code(self,X,device,X_dtype="cpu"):
         if X_dtype=="cpu":
             I = X.to(device)
@@ -134,18 +134,24 @@ class fuzzy_ART:
         I = torch.hstack((X, 1-X))
         return I
 
-    def train(self, X, X_dtype="cpu"):
+    def train(self, argument, X_dtype="cpu"):
+        X = argument["B_q"]
         I = self.complement_code(X,self.device,X_dtype)   # shape of X = Mx1, shape of I = 2Mx1  #[batch,feature_num]
         match_num=0
-        batch_num=np.array(I.shape)[1]
+        batch_num=np.array(I.shape)[0]
+        if "V" in argument:
+            V = argument["V"]
+        else:
+            V = torch.zeros( (batch_num, self.c_max) ).to(self.device)
+
         for batch_id in range(batch_num):
-            A=I[0][batch_id]       
+            A=I[batch_id]       
             #A55                             #[cmax,feature_num]
             xa_mod=torch.sum(torch.minimum(A, self.W),dim=1)  
-            T=xa_mod/(self.alpha + torch.sum(self.W, dim=1))       #[cmax]
+            V[batch_id]=xa_mod/(self.alpha + torch.sum(self.W, dim=1)) + 0.1*V[batch_id]      #[cmax]
             vigilance=xa_mod / (self.I_sum + self.alpha)            #[cmax]  
             
-            J_list=T.sort(descending=True).indices.cpu().tolist()
+            J_list=V[batch_id].sort(descending=True).indices.cpu().tolist()
             match_flag=False
             for J in J_list:
                 # Checking for resonance ---
@@ -170,17 +176,20 @@ class fuzzy_ART:
                 print("ART memory over! ",self.rho)
         
         if match_num==batch_num:
-            return True,match_num*1.0/batch_num
+            argument["W"] = self.W
+            argument["V"] = V
+            return True,match_num*1.0/batch_num, argument
         return False,match_num*1.0/batch_num
 
-    def train_batch(self, X, X_dtype="cpu"):
+    def train_batch(self, argument, X_dtype="cpu"):
         #N=self.N
+        X = argument["B_q"]
         I = self.complement_code(X,self.device,X_dtype)   # shape of X = Mx1, shape of I = 2Mx1
         
         I_in=torch.unsqueeze(I,dim=1).repeat(1,self.N+1,1)  #[batch,cmax,feature_num]
         xa_mod=torch.sum(torch.minimum(I_in,self.W),dim=2)  #[batch,cmax]
         T=xa_mod/(self.alpha+torch.sum(self.W,dim=1))  #[batch,cmax]
-        vigilance=xa_mod/(self.I_sum+self.alpha) #[batch,cmax]  torch.sum(I,dim=1).unsqueeze(dim=1).repeat(1,self.c_max)
+        vigilance=xa_mod/(self.I_sum+self.alpha)   #torch.sum(I_in,dim=2) ##[batch,cmax]  torch.sum(I,dim=1).unsqueeze(dim=1).repeat(1,self.c_max)
         #print(I,torch.sum(I,dim=1).unsqueeze(dim=1).repeat(1,self.c_max))
         
         J_list=T.sort(dim=-1,descending=True).indices.cpu().tolist()
@@ -196,6 +205,7 @@ class fuzzy_ART:
                     if self.self_supervision:
                         input = torch.minimum(I[batch_id], self.W[J,:])
                         self.W[J,:] = self.beta*input + (1-self.beta)*self.W[J,:] # weight update
+                        # self.V[J,:] = torch.sum(torch.minimum(I[batch_id], self.W[J,:]))/(10**-5 + torch.sum(self.W[J,:])) + 0.1 * self.V[J,:]
                         # self.W[J,:] = self.beta*I[batch_id] + (1-self.beta)*self.W[J,:] # weight update
                     match_flag=True
                     match_num+=1

@@ -34,8 +34,11 @@ def type_input(inputs, name, devide):
     return 0
 
 
-def  half_rectified(input):
-    output = torch.where(input < 0, 0 * input, input)
+def  half_rectified(input, type = 1):
+    if type == 0:
+        output = torch.where(input < 0, 0 * input, input)
+    elif type == 1:
+        output = F.relu(input)
     return output
 
 def half_rectified_relu(input):

@@ -76,13 +76,14 @@ def GaussianBlur(batch_img, ksize, sigmac, sigmas):
         weighted_pix_on = weighted_pix_on_1 / weighted_pix_on_2
         weighted_pix_off = -weighted_pix_on
         #on cell
+        #A4
         weighted_pix_on = torch.where(weighted_pix_on < 0, 0, weighted_pix_on)
         weighted_pix_off = torch.where(weighted_pix_off < 0, 0, weighted_pix_off)
         # weighted_pix_on = F.pad(weighted_pix_on, pad=[pad, pad, pad, pad], mode='constant')
         # weighted_pix_on = F.conv2d(weighted_pix_on, weight=kern_g, bias=None, stride=1, padding=0, groups=C)
         weighted_pix_on = weighted_pix_on * (1 + kernel_G)
         weighted_pixs_on.append(weighted_pix_on)
-
+        #A5
         # weighted_pix_off = F.pad(weighted_pix_off, pad=[pad, pad, pad, pad], mode='constant')
         # weighted_pix_off = F.conv2d(weighted_pix_off, weight=kern_g, bias=None, stride=1, padding=0, groups=C)
         weighted_pix_off = weighted_pix_off * (1 + kernel_G)

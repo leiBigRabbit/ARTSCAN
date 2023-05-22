@@ -17,7 +17,9 @@ def shifted_map(input, max_place, key):
     return output
 
 # Gain field
-def Gain_field(S_input, max_place, Amn):
+def Gain_field(argument, max_place, Amn):
+    S_input = argument["S_ij"]
+    max_place = argument["S_ij"]
     S_eye = shifted_map(S_input, max_place, 1)
     shifted_A = shifted_map(Amn, max_place, 0)
     #A34--AImn

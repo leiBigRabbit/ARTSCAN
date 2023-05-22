@@ -13,13 +13,14 @@ from utils.utils import half_rectified, type_input, data_process, signal_m_funct
 from eye_movements import Eye_movements_map
 from Spatial_attentional import attention_shroud
 from gain import Gain_field
-from what_stream import Vector_Bq, activity_V
+from what_stream import Vector_Bq, activity_V, what_stream
 from fuzzy_ART import fuzzy_ART
-
+from View_category_integrator import View_category_integrator
+from Invariant_object_category import object_category_neuron
 
 #A6 surface contours
 def Surface_contours(argument):
-    Object_surface_ons, Object_surface_offs = argument["Object_surface_ons"], argument["Object_surface_ons"]
+    Object_surface_ons, Object_surface_offs = argument["Object_surface_ons"], argument["Object_surface_offs"]
     Jpq_on = 0.8 * Object_surface_ons[0] + 0.1 * Object_surface_ons[1] + 0.1 * Object_surface_ons[2]
     Jpq_off = 0.8 * Object_surface_offs[0] + 0.1 * Object_surface_offs[1] + 0.1 * Object_surface_offs[2]
     K_on_kernel = gaussianKernel(ksize=5, sigma=1, c=1/(2*np.pi))
@@ -102,9 +103,10 @@ def S_reduce_with_P(Surface_filling, boundary_gated_diffusion_P):
     return outputs
 
 #A22
-def Surface_filling_in_(argument, Boundary, S_filling_ins, output_signal_sf, X_input, Rwhere=0):
+def Surface_filling_in_(argument, Boundary, S_filling_ins, X_input, Rwhere=0):
     dt = argument["dt"]
     Boundary = argument["Boundary"]
+    output_signal_sf = argument["output_signal_sf"]
     Pboundary_gated_diffusion = boundary_gated_diffusion(Boundary)
     s_with_p = S_reduce_with_P(S_filling_ins, Pboundary_gated_diffusion)
 
@@ -174,19 +176,27 @@ def main():
             argument["Amn"] = torch.zeros(Z[0].shape)
             argument["Vjq"] = 0
             argument['M'] = 0
+            argument["output_signal_sf"] = 0
+            argument["Rwhere"] = 0
 
         argument = Boundaries(argument)
+
         argument = Vector_Bq(argument)
         
         for i in range(3):
             _,_,argument = model.train(argument)
-        argument = activity_V(argument)        
+        #A60
+        argument = activity_V(argument)
+
+        M = 0
+        #A61
+        argument = View_category_integrator(argument)
+        #A63
+        argument = object_category_neuron(argument)
+        
         #A23
-        if t < 20:
-            output_signal_sf = 0 
-            Rwhere=0
-        Object_surface_ons = Surface_filling_in_(argument, argument, argument["Object_surface_ons"], output_signal_sf,  imgsc_on, Rwhere)
-        Object_surface_offs = Surface_filling_in_(argument, argument, argument["Object_surface_offs"], output_signal_sf,  imgsc_off)
+        Object_surface_ons = Surface_filling_in_(argument, argument, argument["Object_surface_ons"], imgsc_on)
+        Object_surface_offs = Surface_filling_in_(argument, argument, argument["Object_surface_offs"], imgsc_off)
         argument["Object_surface_ons"] = Object_surface_ons
         argument["Object_surface_offs"] = Object_surface_offs
         # Object_surface_ons = Surface_filling_in(dt, Pboundary_gated_diffusion, Object_surface_ons, output_signal_sf,  imgsc_on)

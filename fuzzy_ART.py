@@ -126,7 +126,7 @@ class fuzzy_ART:
         self.N = 0         # no. of categories initialized to zero
         self.W = torch.ones( (self.c_max, self.M*2) ).to(self.device) # initialize weigts with 1s
         self.I_sum=torch.tensor([X_size]).to(self.device)
-        self.V = torch.zeros( (self.c_max, self.M*2) ).to(self.device)
+        self.V = torch.zeros( (25, 100) ).to(self.device)
     def complement_code(self,X,device,X_dtype="cpu"):
         if X_dtype=="cpu":
             I = X.to(device)
@@ -180,6 +180,48 @@ class fuzzy_ART:
             argument["V"] = V
             return True,match_num*1.0/batch_num, argument
         return False,match_num*1.0/batch_num
+
+    def train_(self, X, X_dtype="cpu"):
+        # X = argument["B_q"]
+        I = self.complement_code(X,self.device,X_dtype)   # shape of X = Mx1, shape of I = 2Mx1  #[batch,feature_num]
+        match_num=0
+        batch_num=np.array(I.shape)[0]
+
+        for batch_id in range(batch_num):
+            A=I[batch_id]       
+            #A55                             #[cmax,feature_num]
+            xa_mod=torch.sum(torch.minimum(A, self.W),dim=1)  
+            self.V[batch_id]=xa_mod/(self.alpha + torch.sum(self.W, dim=1)) + 0.1*self.V[batch_id]      #[cmax]
+            vigilance=xa_mod / (self.I_sum + self.alpha)            #[cmax]  
+            
+            J_list=self.V[batch_id].sort(descending=True).indices.cpu().tolist()
+            match_flag=False
+            for J in J_list:
+                # Checking for resonance ---
+                d = vigilance[J].cpu()
+                if d >= self.rho: # resonance occured
+                    if self.self_supervision:
+                        input = torch.minimum(A, self.W[J,:])
+                        self.W[J,:] = self.beta*input + (1-self.beta)*self.W[J,:] # weight update
+                    match_flag=True
+                    match_num+=1
+                    break
+            #print(batch_id,match_flag,self.N,match_num)
+            if match_flag:
+                continue
+            if self.N < self.c_max:    # no resonance occured, create a new category
+                k = self.N
+                self.W[k,:] = A
+                self.N += 1
+                match_num+=1
+            else:
+                # self.rho-=self.rho/10.
+                print("ART memory over! ",self.rho)
+        
+        if match_num==batch_num:
+            return True,match_num*1.0/batch_num, self.W, self.V
+        return False,match_num*1.0/batch_num
+
 
     def train_batch(self, argument, X_dtype="cpu"):
         #N=self.N

@@ -140,9 +140,16 @@ class arcscan():
         self.Y_ij = self.Y_ij + self.dt * (self.K_e * (2 - self.Y_ij - 3 * 10 ** 6 * self.Y_ij * (F.relu(self.Cij) + 625 * inter_value)))
 
     def sign_h(self):
-        # if self.Eij == max(self.Eij) and max(self.Eij) > 0.58:
-        h_Eij = 1
+        max_value = torch.max(self.Eij)
+        h_Eij = torch.zeros_like(self.Eij)
+        if max_value>0.58:
+            max_place = (self.Eij==torch.max(self.Eij)).nonzero()[0]
+            h_Eij[max_place[0]][max_place[1]][max_place[2]][max_place[3]] = 1
         return h_Eij
+
+        # if self.Eij == max(self.Eij) and max(self.Eij) > 0.58:
+        # h_Eij = 1
+        # return h_Eij
 
 
     def Eye_movements_map(self):
@@ -158,18 +165,14 @@ class arcscan():
 
         self.W_ve = signal_m_function(self.Vjq) * self.sign_h() * (self.Eij - self.W_ve) * 500 * self.dt + self.W_ve
 
-        Eij = self.Y_ij * (1 - self.Eij) * (F.relu(C_ij) + 625 * inter_value_J + torch.sum(signal_m_function(self.Vjq)*self.W_ve)) 
-        Eij -= E_ij
-        Eij_ = - 0.01 * E_ij * sum(F.relu(C_ij) + inter_value_K)
-        Eij = Eij + Eij_
-        Eij =  Eij* dt + E_ij
-        EIJ = torch.max(Eij)
-        output = torch.zeros_like(Eij)
-        if EIJ>0.58:
-            max_place = (Eij==torch.max(Eij)).nonzero()[0]
-            output[max_place[0]][max_place[1]][max_place[2]][max_place[3]] = EIJ
-        argument["EIJ"], argument["Eij"], argument["Y_ij"], argument["max_place"] = EIJ, Eij, Y_ij, max_place    
+        self.Eij = (self.Y_ij * (1 - self.Eij) * (F.relu(C_ij) + 625 * inter_value_J + torch.sum(signal_m_function(self.Vjq)*self.W_ve)) - 0.01 * self.Eij * torch.sum(F.relu(self.Cij + inter_value_K)) - self.Eij ) * self.dt + self.Eij
 
+        max_value = torch.max(self.Eij)
+        EIJ = torch.zeros_like(self.Eij)
+        if max_value>0.58:
+            max_place = (self.Eij==torch.max(self.Eij)).nonzero()[0]
+            EIJ[max_place[0]][max_place[1]][max_place[2]][max_place[3]] = max_value
+        return EIJ
 
     #A60
     def normalized_V_(self, V):

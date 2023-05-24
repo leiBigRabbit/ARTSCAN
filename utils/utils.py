@@ -52,7 +52,7 @@ def  signal_g_function(input):
 
 #A21
 def signal_m_function(input):
-    input = half_rectified(input)
+    input = F.relu(input)
     output = input / (0.001 + input)
     return output
 

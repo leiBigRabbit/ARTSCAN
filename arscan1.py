@@ -24,8 +24,9 @@ class arcscan():
         self.dt = dt
         self.size = size
         self.batch = 25
-        self.size_ = (self.batch, size[0]//5,size[1]//5 )
+        self.size_ = (self.batch, size[0]//5)
         self.Rwhere = 0
+        self.category = 100
         self.Object_surface_ons = [torch.zeros(size), torch.zeros(size), torch.zeros(size)]
         self.Object_surface_offs = [torch.zeros(size), torch.zeros(size), torch.zeros(size)]
         self.Eij = torch.zeros(size)
@@ -37,22 +38,23 @@ class arcscan():
         self.B = torch.zeros(size)
         self.fuzzy_ART = fuzzy_ART(X_size=100 * 100, c_max=100, rho=0.85, alpha=0.00001, beta=1)
         self.t = t
-        
+        #up
         self.W_vo = torch.ones( (self.size_) ).to(self.device)
         self.W_od = torch.ones( (self.size_) ).to(self.device)
         self.W_df = torch.ones( (self.size_) ).to(self.device)
         self.W_fn = torch.ones( (self.size_) ).to(self.device)
         self.W_of = torch.ones( (self.size_) ).to(self.device)
-
+        #down
         self.W_nf = torch.ones( (self.size_) ).to(self.device)
-        self.W_fo = torch.ones( (self.size_) ).to(self.device)
+        self.W_fo = torch.ones( (100) ).to(self.device)
         self.W_ov = torch.ones( (self.size_) ).to(self.device)
 
-        self.Vjiq = torch.zeros( (self.size_) ).to(self.device)
-        self.Oj = torch.zeros( (self.size_) ).to(self.device)
-        self.Fj = torch.zeros( (self.size_) ).to(self.device)
-        self.Dj = torch.zeros( (self.size_) ).to(self.device)
-        self.Nj = torch.zeros( (self.size_) ).to(self.device)
+        self.Vjiq = torch.zeros( (100) ).to(self.device)
+        self.Oj = torch.zeros( (100) ).to(self.device)
+        self.Fj = torch.zeros( (100) ).to(self.device)
+        self.Dj = torch.zeros( (100) ).to(self.device)
+        self.Nj = torch.zeros( (100) ).to(self.device)
+        # self.Vjq = torch.zeros( (self.size_) ).to(self.device)
 
         self.Rwhere = Rwhere
         self.key = key
@@ -60,7 +62,8 @@ class arcscan():
         self.Uj = 0
         self.Tj = 0
         self.Pj = 0
-    
+        self.T = {'t':{},}
+
     def part1(self, input):
         Z = input["Z"], 
         imgsc_on =  input["imgsc_on"]
@@ -70,42 +73,113 @@ class arcscan():
         self.Object_surface_offs = self.Surface_filling_in_(self.B, self.Object_surface_offs, imgsc_off)
         self.Cij = self.Surface_contours()
         self.S_ij = 0.05 * (self.Object_surface_ons[0] + self.Object_surface_offs[0]) + 0.1 * (self.Object_surface_ons[1] + self.Object_surface_offs[1]) + 0.85 * (self.Object_surface_ons[2] + self.Object_surface_offs[2])
-        return self.B
-    
+        # return self.B
+    #view category integrators
     def part2_up(self, input):
-        self.Vjq = self.activity_V(input)
-        self.Vjiq = self.build_View_category_integrator(self.Vjq)
-
-        self.Oj = self.build_Invariant_object_category(self.Vjiq)
-        self.W_vo = 0.003 * (1 - self.W_vo) * half_rectified_relu(self.Vjiq) * signal_m_function(self.Oj) - 0.001*self.W_vo * half_rectified_relu(self.Vjiq) * torch.sum(signal_m_function(self.Oj))  #***修改
+        self.Vjq = self.normalized_V_(input)
+        #Vjiq
+        self.Vjiq = (-0.01 * self.Vjiq + self.t * ((1 + torch.sum(self.W_ov * signal_m_function(self.Oj),dim=1)).unsqueeze(dim=1) * (half_rectified(self.Vjq) + self.G)) - self.Rwhere) * self.dt + self.Vjiq
+        
+        #A63
+        self.Oj = self.Oj + self.dt * (-self.Oj + (1 + 2 * self.Fj * self.W_fo) * (0.5 * torch.sum(signal_m_function(half_rectified_relu(self.Vjiq))* self.W_vo)  + self.G) - self.Rwhere)
+        self.normalized_O_()
         
         #A66
         self.Dj= -self.Dj + self.Uj + self.Tj + 0.1 * torch.sum(signal_m_function(self.Oj) * self.W_od)   #待修改
-        self.normalized_D()
+        self.normalized_D_()
+
+        self.Fj = (-self.Fj + (0.5 * signal_m_function(self.Oj) * self.W_of + self.G) * (1 + torch.sum(self.Dj * self.W_df + torch.sum(signal_m_function(self.Nj) * self.W_nf)))) * self.dt * 20 + self.Fj
+        self.normalized_F_()
+
+        self.Nj = (- self.Nj + torch.sum(signal_m_function(self.Fj) * self.W_fn) + self.Pj) * 20 * self.dt
+        self.normalized_N_()
+    
+        # self.W_ov = (signal_m_function(self.Oj) * F.relu(self.Vjiq) * (F.relu(self.Vjiq) - self.W_ov)) * self.dt + self.W_ov
+
+    def part2_down(self):
+        #80
+        self.W_fn = signal_m_function(self.Fj) * (signal_m_function(self.Nj) - self.W_fn) * self.dt /50 + self.W_fn
+        #A76
+        self.W_of = (signal_m_function(self.Oj)* (signal_m_function(self.Fj) - self.W_of)) * self.dt / 50 + self.W_of
         #A78
         self.W_od = signal_m_function(self.Oj) * signal_m_function(self.Dj) * (signal_m_function(self.Dj) - self.W_od) * self.dt / 50 + self.W_od
         
-        self.Fj = (-self.Fj + (0.5 * signal_m_function(self.Oj) * self.W_of + self.G) * (1 + torch.sum(self.Dj * self.W_df + torch.sum(signal_m_function(self.Ni) * self.W_nf)))) * self.dt * 20 + self.Fj
-        self.normalized_F()
-        #A76
-        self.W_of = (signal_m_function(self.Oj)* (signal_m_function(self.Fj) - self.W_of)) * self.dt / 50 + self.W_of
-        
-
-        self.Nj = (- self.Nj + torch.sum(signal_m_function(self.Fj) * self.W_fn) + self.Pj) * 20 * self.dt
-        self.normalized_N()
-        #80
-        self.W_fn = signal_m_function(self.Fj) * (signal_m_function(self.Nj) - self.W_fn) * self.dt /50 + self.W_fn
-        return 
-    
-        # self.W_ov = (signal_m_function(self.Oj) * F.relu(self.Vjiq) * (F.relu(self.Vjiq) - self.W_ov)) * self.dt + self.W_ov
-    def part2_down(self):
         self.W_nf = signal_m_function(self.Nj) * signal_m_function(self.Fj) *(signal_m_function(self.Fj) - self.W_nf) * self.dt /50 + self.W_nf
         # self.Fj = (-self.Fj + (0.5 * signal_m_function(self.Oj) * self.W_of + self.G) * (1 + torch.sum(self.Dj * self.W_df + torch.sum(signal_m_function(self.Ni) * self.W_nf)))) * self.dt * 20 + self.Fj
         self.W_fo = (signal_m_function(self.Fj) * signal_m_function(self.Oj) * (signal_m_function(self.Oj) - self.W_fo)) * self.dt/50 + self.W_fo
         # self.Oj = self.build_Invariant_object_category(self.Vjiq)
         self.W_ov = (signal_m_function(self.Oj) * F.relu(self.Vjiq) * (F.relu(self.Vjiq) - self.W_ov)) * self.dt/50 + self.W_ov
-        return
 
+    def train(self, input):
+        self.part1(input)
+        input_B = self.Vector_Bq(self.B)
+        _,_,W,V = self.fuzzy_ART.train_(input_B, self.Vjiq)
+        self.part2_up(V)
+        self.part2_down()
+    #A60
+    def normalized_V_(self, V):
+        mask = (V == V.max(dim=1, keepdim=True)[0]).to(dtype=torch.int32)
+        V = torch.mul(mask, V)
+        return V
+
+    def normalized_O_(self):
+        Oj_on = F.relu(self.Oj)
+        mask = (Oj_on == Oj_on.max(dim=0, keepdim=True)[0]).to(dtype=torch.int32)
+        self.Oj = torch.mul(mask, Oj_on)
+
+    def normalized_D_(self):
+        mask = (self.Dj == self.Dj.max(dim=0, keepdim=True)[0]).to(dtype=torch.int32)
+        self.Oj = torch.mul(mask, self.Dj)
+
+    def normalized_F_(self):
+        mask = (self.Fj == self.Fj.max(dim=0, keepdim=True)[0]).to(dtype=torch.int32)
+        self.Fj = torch.mul(mask, self.Fj)
+
+    def normalized_N_(self):
+        mask = (self.Nj == self.Nj.max(dim=0, keepdim=True)[0]).to(dtype=torch.int32)
+        self.Nj = torch.mul(mask, self.Nj)
+
+    def normalized_V(self, V):
+        original = V
+        result = torch.zeros_like(original)
+        key = torch.arange(0,original.shape[1],1)!=torch.arange(0,original.shape[1],1)
+
+        for i in range(original.shape[0]):
+            max_index = torch.argmax(original[i])
+            min_index = torch.argmin(original[i])
+            if sum(original[i][max_index] - original[i] >= 2) == original.shape[1] -1:
+                result[i][max_index] = original[i][max_index]
+                # part1 = [max_index, original[i][max_index]]
+                key = torch.arange(0,original.shape[1],1) == max_index
+            part2 = original[i][~key]
+            cut = torch.abs(original[i][~key].unsqueeze(dim=1)-part2)<=0.03
+            cut = torch.sum(cut,dim=1) >= original.shape[1]
+            if sum(cut) > 0 and  min(part2[~cut]) - max(part2[cut]) > -0.03:
+                index = index[~key][cut]
+                value = original[i][index] **2 / (torch.sum(part2)-original[i][index])
+                result[i][index] = value
+        Vjq = result        
+        # V[0][1] = 1.104 #example
+        # Vjq_value, _ = V.sort(descending=True)
+        # min_value = Vjq_value[:,-1:]
+        # max_value = Vjq_value[:,:1]
+        # Vjq_value = torch.cat((torch.arange(0, 25, 1).unsqueeze(dim = 1), Vjq_value), dim=1)  #增加一列index列
+        # key = torch.sum(((max_value - (Vjq_value[:,2:] + 0.03)) > 0), dim=1) == (Vjq_value.shape[1]-2)
+        # # key = key.expand(100,25).transpose(0,1)
+        # #A60/1
+        # part1 = Vjq_value[key]  
+        # #A60/2
+        # key2 = max_value[~key].squeeze(dim=1) - min_value[~key].squeeze(dim=1) < 0.03 #实验数据设置0.5546
+        # part2 = Vjq_value[~key][key2]
+        # part2[:,1:] = part2[:,1:] * (part2[:,1:] / torch.sum(part2[:,1:]))
+        
+        # part3 = Vjq_value[~key][~key2]
+        # part3[:,1:] = part3[:,1:] * 0
+        # Vjq = torch.cat((part1,part2,part3),dim=0)
+        # # torch.masked_select(Vjq_value,key.expand(100,25).transpose(0,1))
+        # Vjq = sorted(Vjq, key = lambda x:x[0])
+        # Vjq = torch.tensor([item.cpu().detach().numpy() for item in Vjq])[:,1:]
+        return Vjq     
 
     def normalized_N(self):
         self.Nj, _ = self.Nj.sort(descending=True)
@@ -129,7 +203,7 @@ class arcscan():
         self.Nj = torch.tensor([item.cpu().detach().numpy() for item in self.Nj])[:,1:]
         return self.Nj
 
-    def  normalized_D(self):
+    def normalized_D(self):
         self.Dj, _ = self.Dj.sort(descending=True)
         min_value = self.Dj[:,-1:]
         max_value = self.Dj[:,:1]
@@ -173,34 +247,15 @@ class arcscan():
         self.Fj = torch.tensor([item.cpu().detach().numpy() for item in self.Fj])[:,1:]
         return self.Fj
 
-    def train(self, input):
-        self.B = self.part1(input)
-        input_B = self.Vector_Bq(self.B)
-        
-        for i in range(20):
-            _,_,W,V = self.fuzzy_ART.train_(input_B)
-        self.part2_up(V)
-        self.part2_down()
-
-    def build_Invariant_object_category(self, Vjiq):
-        # try:
-        self.Oj = self.Oj + self.dt * (-self.Oj + (1 + 2 * self.Fj * self.W_fo) * (0.5 * torch.sum(signal_m_function(half_rectified_relu(Vjiq))* self.W_vo)  + self.G) - self.Rwhere)
-        # except:
-        #     self.Oj = 0.5 * torch.sum(signal_m_function(half_rectified_relu(self.Vjiq))) * self.W_vo
-        
-        #A64
-        self.Oj = self.Oj_normalized(self.Oj)
-        # argument['Wvo'] = weight_Wvo(argument)
-        return self.Oj     
-
-
-    def Oj_normalized(self, Oj):
-        Oj_on = F.relu(Oj)
+    def normalized_O(self):
+        Oj_on = F.relu(self.Oj)
         Oj_on, _ = Oj_on.sort(descending=True)
-        min_value = Oj_on[:,-1:]
-        max_value = Oj_on[:,:1]
+        min_value = Oj_on[0]
+        max_value = Oj_on[-1]
 
-        Oj_on = torch.cat((torch.arange(0, 25, 1).unsqueeze(dim = 1), Oj_on), dim=1)
+        if max_value - Oj_on[1] > 0.3:
+            return Oj_on
+
         Oj_on = torch.cat((torch.arange(0, 25, 1).unsqueeze(dim = 1), Oj_on), dim=1)
         key = torch.sum(((max_value - (Oj_on[:,2:] + 0.3)) > 0), dim=1) == (Oj_on.shape[1]-2)
         part1 = Oj_on[key] 
@@ -216,13 +271,14 @@ class arcscan():
         Oj_on = torch.tensor([item.cpu().detach().numpy() for item in Oj_on])[:,1:]
         return Oj_on
 
+    def build_Invariant_object_category(self, Vjiq):
+        self.Oj = self.Oj + self.dt * (-self.Oj + (1 + 2 * self.Fj * self.W_fo) * (0.5 * torch.sum(signal_m_function(half_rectified_relu(Vjiq))* self.W_vo)  + self.G) - self.Rwhere)
+        self.Oj_normalized(self.Oj)
+
+
     #A61    
     def build_View_category_integrator(self, Vjq):
-        try:
-            self.Vjiq = (-0.01 * self.Vjiq + self.t * (1 + torch.sum(signal_m_function(self.Oi) * self.W_ov)) * (half_rectified(Vjq) + self.G) - self.Rwhere) * self.dt + self.Vjiq
-        except:
-            self.Vjiq = (self.t * (Vjq + self.G) - self.Rwhere) * self.dt
-        return self.Vjiq
+        self.Vjiq = (-0.01 * self.Vjiq + self.t * (1 + torch.sum(signal_m_function(self.Oj) * self.W_ov)) * (half_rectified(Vjq) + self.G) - self.Rwhere) * self.dt + self.Vjiq
 
     def get_G(self, key):
         if key == "down":
@@ -231,29 +287,6 @@ class arcscan():
             return 0        
 
 
-    #A60
-    def activity_V(self, V):
-        # argument["V"][0][1] = 1.104 #example
-        Vjq_value, _ = V.sort(descending=True)
-        min_value = Vjq_value[:,-1:]
-        max_value = Vjq_value[:,:1]
-        Vjq_value = torch.cat((torch.arange(0, 25, 1).unsqueeze(dim = 1), Vjq_value), dim=1)  #增加一列index列
-        key = torch.sum(((max_value - (Vjq_value[:,2:] + 0.03)) > 0), dim=1) == (Vjq_value.shape[1]-2)
-        # key = key.expand(100,25).transpose(0,1)
-        #A60/1
-        part1 = Vjq_value[key]  
-        #A60/2
-        key2 = max_value[~key].squeeze(dim=1) - min_value[~key].squeeze(dim=1) < 0.03 #实验数据设置0.5546
-        part2 = Vjq_value[~key][key2]
-        part2[:,1:] = part2[:,1:] * (part2[:,1:] / torch.sum(part2[:,1:]))
-        
-        part3 = Vjq_value[~key][~key2]
-        part3[:,1:] = part3[:,1:] * 0
-        Vjq = torch.cat((part1,part2,part3),dim=0)
-        # torch.masked_select(Vjq_value,key.expand(100,25).transpose(0,1))
-        Vjq = sorted(Vjq, key = lambda x:x[0])
-        Vjq = torch.tensor([item.cpu().detach().numpy() for item in Vjq])[:,1:]
-        return Vjq     
        
     def Vector_Bq(self, input):
         input = torch.cat(torch.split(input[0][0], 100, 0),dim=1)

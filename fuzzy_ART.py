@@ -181,9 +181,9 @@ class fuzzy_ART:
             return True,match_num*1.0/batch_num, argument
         return False,match_num*1.0/batch_num
 
-    def train_(self, X, X_dtype="cpu"):
+    def train_(self, X, Vjiq, X_dtype="cpu"):
         # X = argument["B_q"]
-        I = self.complement_code(X,self.device,X_dtype)   # shape of X = Mx1, shape of I = 2Mx1  #[batch,feature_num]
+        I = self.complement_code(X,self.device, X_dtype)   # shape of X = Mx1, shape of I = 2Mx1  #[batch,feature_num]
         match_num=0
         batch_num=np.array(I.shape)[0]
 
@@ -191,7 +191,7 @@ class fuzzy_ART:
             A=I[batch_id]       
             #A55                             #[cmax,feature_num]
             xa_mod=torch.sum(torch.minimum(A, self.W),dim=1)  
-            self.V[batch_id]=xa_mod/(self.alpha + torch.sum(self.W, dim=1)) + 0.1*self.V[batch_id]      #[cmax]
+            self.V[batch_id]=xa_mod/(self.alpha + torch.sum(self.W, dim=1)) + (1 + 0.1 * Vjiq[batch_id])     #[cmax]
             vigilance=xa_mod / (self.I_sum + self.alpha)            #[cmax]  
             
             J_list=self.V[batch_id].sort(descending=True).indices.cpu().tolist()

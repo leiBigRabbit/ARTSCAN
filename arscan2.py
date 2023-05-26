@@ -18,6 +18,61 @@ from fuzzy_ART import fuzzy_ART
 from View_category_integrator import View_category_integrator
 from Invariant_object_category import object_category_neuron
 
+
+#A24中四个领域相加。
+def boundary_gated_diffusion(Boundaries):
+    boundary_gated_diffusion_P = []
+    for Boundary in Boundaries:
+        Boundariespg = Boundary.squeeze(0).squeeze(0)  #[:-1, :]
+        p = torch.zeros(Boundariespg.shape[1]).unsqueeze(0)
+        Boundariespg = torch.cat((p, Boundariespg, p), 0)
+        p1 = torch.zeros(Boundariespg.shape[0]).unsqueeze(1)
+        Boundariespg = torch.cat((p1, Boundariespg, p1), 1)
+        B_up, B_left, B_under, B_right = Boundariespg[:-2, 1:-1].unsqueeze(0).unsqueeze(1), Boundariespg[1:-1, :-2].unsqueeze(0).unsqueeze(1), Boundariespg[2:,1:-1].unsqueeze(0).unsqueeze(1), Boundariespg[1:-1, 2:].unsqueeze(0).unsqueeze(1)
+        diffusion_P_up, diffusion_P_under = 10 / (1 + 40 * (B_up + Boundary)), 10 / (1 + 40 * (B_under + Boundary)),
+        diffusion_P_left, diffusion_P_right = 10 / (1 + 40 * (B_left + Boundary)), 10 / (1 + 40 * (B_right + Boundary)), 
+        boundary_gated_diffusion_P.append([diffusion_P_up, diffusion_P_left, diffusion_P_under, diffusion_P_right])
+        # boundary_gated_diffusion_P.append(boundary_gated_diffusion_P)
+    # type_input(boundary_gated_diffusion_P, "boundary_gated_diffusion_P", 1)
+    return boundary_gated_diffusion_P
+
+#A22 A23
+def S_reduce_with_P(Surface_filling, boundary_gated_diffusion_P):
+    output = []
+    for Surface_filling_S in Surface_filling:
+        Surface_filling_Spg = Surface_filling_S.squeeze(0).squeeze(0)  #[:-1, :]
+        p = torch.zeros(Surface_filling_Spg.shape[1]).unsqueeze(0)
+        Surface_filling_Spg = torch.cat((p, Surface_filling_Spg, p), 0)
+        p1 = torch.zeros(Surface_filling_Spg.shape[0]).unsqueeze(1)
+        Surface_filling_Spg = torch.cat((p1, Surface_filling_Spg, p1), 1)
+        B_up, B_left, B_under, B_right = Surface_filling_Spg[:-2, 1:-1], Surface_filling_Spg[1:-1, :-2], Surface_filling_Spg[2:,1:-1], Surface_filling_Spg[1:-1, 2:]
+        surface_activity = [B_up - Surface_filling_S, B_left - Surface_filling_S, B_under - Surface_filling_S, B_right - Surface_filling_S]
+        output.append(surface_activity)
+    outputs = []
+    i = 0
+    for surface, boundary in zip(output, boundary_gated_diffusion_P):
+        x = []
+        for i in range(len(surface)):
+            x.append(surface[i] * boundary[i])
+        outputs.append(sum(x))
+    # type_input(outputs, "sp", 1)
+    return outputs
+
+#A16
+def complex_cells(Y_ons, Y_offs):
+    #A15
+    Y_add = np.array(Y_ons).sum(axis=0)
+    Y_cuts = np.array(Y_offs).sum(axis=0)
+    input = np.array([Y_add, Y_cuts]).sum(axis=0)
+    # type_input(input, "output_on1", 1)
+    #A17
+    L_gskernel = gaussianKernel(7, 1, 1)
+    output = []
+    for Z in input:
+        complex = half_rectified(Z ** 2 / (0.01 + gaussianconv_2d(Z**2, L_gskernel, (3,3))))
+        output.append(complex)
+    return output
+
 class arcscan():
     def __init__(self, size=(500, 500), dt = 0.05, t=0.6, Rwhere=0, key="up"):
         self.device="cpu"
@@ -31,7 +86,6 @@ class arcscan():
         self.Object_surface_offs = [torch.zeros(size), torch.zeros(size), torch.zeros(size)]
         self.Eij = torch.zeros(size)
         self.Y_ij = torch.zeros(size)
-        self.Amn = torch.zeros(size)
         self.Cij = torch.zeros(1, 1, size[0], size[1])
         self.Sijf = torch.zeros(size)
         self.M = torch.zeros(size)
@@ -66,7 +120,7 @@ class arcscan():
 
         self.W_ve = torch.ones_like((self.Eij))  #****
         self.EIJ = torch.zeros_like(self.Eij)
-        self.Amn = torch.zeros(self.size)
+        self.Amn = torch.zeros(1, 1, size[0]*2, size[1]*2)
         self.Y_ijE = torch.zeros(size)
         self.Y_ijA = torch.zeros(size)
 
@@ -178,8 +232,8 @@ class arcscan():
         gA = signal_g_function(self.Amni)
         fA = signal_f_function(self.Amn)
         self.habituative_transmitter_A()
-        input_A = gA * (1 + 0.2 * gaussianconv_2d(fA, kernel_C, 19)) * (1 - input) *self.Y_ijA - 0.1*self.Amn        
-        second = -self.Amn * gaussianconv_2d((gA + fA), kernel_E, 3) + 10 * self.Rwhere
+        input_A = gA * (1 + 0.2 * gaussianconv_2d(fA, kernel_C, 19)) * (1 - self.Amn) *self.Y_ijA - 0.1*self.Amn        
+        second = -self.Amn * gaussianconv_2d(gA + fA, kernel_E, 1500) + 10 * self.Rwhere
         self.Amn = (input_A + second) * 10 * self.dt + self.Amn
 
     def Eye_movements_map(self):
@@ -227,7 +281,7 @@ class arcscan():
                 output = c[:, :, H + self.max_place[2]:2*H + self.max_place[2], W + self.max_place[3]: 2*W + self.max_place[3]]
             return output
         else:
-            return input
+            return c
         
 
     #A42
@@ -512,7 +566,7 @@ def main():
     #A.1. Retina and LGN cells
     imgsc_on, imgsc_off = GaussianBlur(img, [5,17,41], sigmac = [0.3, 0.75, 2], sigmas = [1, 3, 7])
     #A.2. V1 polarity-sensitive oriented simple cells
-    model = fuzzy_ART(X_size=100 * 100, c_max=100, rho=0.85, alpha=0.00001, beta=1)
+    # model = fuzzy_ART(X_size=100 * 100, c_max=100, rho=0.85, alpha=0.00001, beta=1)
     #A13
     Y_ons, Y_offs = Gabor_conv(imgsc_on, imgsc_off, sigmav= [3, 4.5, 6], sigmah = [1, 1.5, 2], Lambda = [3, 5, 7], angles = [0, 45, 90, 135], K_size = [(19,19), (29,29), (39,39)])
     #A16
@@ -524,98 +578,6 @@ def main():
     for t in range(1,40):
         model1.train(argument)
 
-        # #A23
-        # Object_surface_ons = Surface_filling_in_(argument, argument, argument["Object_surface_ons"], imgsc_on)
-        # Object_surface_offs = Surface_filling_in_(argument, argument, argument["Object_surface_offs"], imgsc_off)
-        # argument["Object_surface_ons"] = Object_surface_ons
-        # argument["Object_surface_offs"] = Object_surface_offs
-        # # Object_surface_ons = Surface_filling_in(dt, Pboundary_gated_diffusion, Object_surface_ons, output_signal_sf,  imgsc_on)
-        # #A23
-        # # Object_surface_offs = Surface_filling_in(dt, Pboundary_gated_diffusion, Object_surface_offs, output_signal_sf, imgsc_off)
-        # #A26
-        # argument["S_ij"] = 0.05 * (Object_surface_ons[0] + Object_surface_offs[0]) + 0.1 * (Object_surface_ons[1] + Object_surface_offs[1]) + 0.85 * (Object_surface_ons[2] + Object_surface_offs[2])
-        # argument = Surface_contours(argument)
-        # #A48
-        # W = signal_m_function(Vjq)
-        # #A43
-        EIJ, Eij, Y_ij, max_place = Eye_movements_map(argument)
-        # #A34  max_place, Amn
-        # #临时定义
-        # max_place = [0,0,50,150]
-        # SFmn, AImn = Gain_field(argument, max_place, Amn)
-
-
-
-
-#A24中四个领域相加。
-def boundary_gated_diffusion(Boundaries):
-    boundary_gated_diffusion_P = []
-    for Boundary in Boundaries:
-        Boundariespg = Boundary.squeeze(0).squeeze(0)  #[:-1, :]
-        p = torch.zeros(Boundariespg.shape[1]).unsqueeze(0)
-        Boundariespg = torch.cat((p, Boundariespg, p), 0)
-        p1 = torch.zeros(Boundariespg.shape[0]).unsqueeze(1)
-        Boundariespg = torch.cat((p1, Boundariespg, p1), 1)
-        B_up, B_left, B_under, B_right = Boundariespg[:-2, 1:-1].unsqueeze(0).unsqueeze(1), Boundariespg[1:-1, :-2].unsqueeze(0).unsqueeze(1), Boundariespg[2:,1:-1].unsqueeze(0).unsqueeze(1), Boundariespg[1:-1, 2:].unsqueeze(0).unsqueeze(1)
-        diffusion_P_up, diffusion_P_under = 10 / (1 + 40 * (B_up + Boundary)), 10 / (1 + 40 * (B_under + Boundary)),
-        diffusion_P_left, diffusion_P_right = 10 / (1 + 40 * (B_left + Boundary)), 10 / (1 + 40 * (B_right + Boundary)), 
-        boundary_gated_diffusion_P.append([diffusion_P_up, diffusion_P_left, diffusion_P_under, diffusion_P_right])
-        # boundary_gated_diffusion_P.append(boundary_gated_diffusion_P)
-    # type_input(boundary_gated_diffusion_P, "boundary_gated_diffusion_P", 1)
-    return boundary_gated_diffusion_P
-
-#A22 A23
-def S_reduce_with_P(Surface_filling, boundary_gated_diffusion_P):
-    output = []
-    for Surface_filling_S in Surface_filling:
-        Surface_filling_Spg = Surface_filling_S.squeeze(0).squeeze(0)  #[:-1, :]
-        p = torch.zeros(Surface_filling_Spg.shape[1]).unsqueeze(0)
-        Surface_filling_Spg = torch.cat((p, Surface_filling_Spg, p), 0)
-        p1 = torch.zeros(Surface_filling_Spg.shape[0]).unsqueeze(1)
-        Surface_filling_Spg = torch.cat((p1, Surface_filling_Spg, p1), 1)
-        B_up, B_left, B_under, B_right = Surface_filling_Spg[:-2, 1:-1], Surface_filling_Spg[1:-1, :-2], Surface_filling_Spg[2:,1:-1], Surface_filling_Spg[1:-1, 2:]
-        surface_activity = [B_up - Surface_filling_S, B_left - Surface_filling_S, B_under - Surface_filling_S, B_right - Surface_filling_S]
-        output.append(surface_activity)
-    outputs = []
-    i = 0
-    for surface, boundary in zip(output, boundary_gated_diffusion_P):
-        x = []
-        for i in range(len(surface)):
-            x.append(surface[i] * boundary[i])
-        outputs.append(sum(x))
-    # type_input(outputs, "sp", 1)
-    return outputs
-
-
-#A22
-def Surface_filling_in(dt, Boundary_diffusionP, S_filling_ins, output_signal_sf, X_input, Rwhere=0):
-    output = []
-    for i  in range(len(S_filling_ins)):
-        S_filling_in = S_filling_ins[i]
-        B, C, H, W = S_filling_in.shape
-        #A25
-        weight = nn.Parameter(torch.tensor([[1.0, 1.0, 1.0],[1.0, -8.0, 1.0],[1.0, 1.0, 1.0]]))
-        weight = weight.view(1, 1, 3, 3).repeat(C, 1, 1, 1)
-        S_filling_in_conv = F.pad(S_filling_in, pad=[1, 1, 1, 1], mode='constant') 
-        S_filling_in_conv = F.conv2d(S_filling_in_conv, weight=weight, bias=None, stride=1, padding=0, groups=S_filling_in.shape[0])
-        #A22
-        output.append(((-80) * S_filling_in + Boundary_diffusionP[i] * S_filling_in_conv + 100 * X_input[i] * (1 + output_signal_sf) - S_filling_in * Rwhere) * dt + S_filling_in)
-    return output
-
-#A16
-def complex_cells(Y_ons, Y_offs):
-    #A15
-    Y_add = np.array(Y_ons).sum(axis=0)
-    Y_cuts = np.array(Y_offs).sum(axis=0)
-    input = np.array([Y_add, Y_cuts]).sum(axis=0)
-    # type_input(input, "output_on1", 1)
-    #A17
-    L_gskernel = gaussianKernel(7, 1, 1)
-    output = []
-    for Z in input:
-        complex = half_rectified(Z ** 2 / (0.01 + gaussianconv_2d(Z**2, L_gskernel, (3,3))))
-        output.append(complex)
-    return output
 
 if __name__ == "__main__":
     main()

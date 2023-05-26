@@ -1,6 +1,6 @@
 from utils.kernel import gaussianKernel
 from utils.conv2d import gaussianconv_2d
-from utils.utils import signal_f_function, signal_m_function, signal_g_function, Reset
+from utils.utils import signal_f_function, signal_m_function, signal_g_function
 import torch.nn.functional as F
 import torch.nn as nn
 

@@ -62,11 +62,6 @@ def signal_f_function(input):
     return output
 
 
-# B.4. Object category reset by transient parietal bursts
-#A50
-def Reset(input, e=0.07):
-    r_where = 100 * half_rectified(100/(100 + signal_k_function(input).sum()) - e)
-    return r_where
 
 #A51 
 def signal_k_function(input):

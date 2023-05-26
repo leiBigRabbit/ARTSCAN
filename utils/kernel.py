@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 def gaussianKernel(ksize, sigma, c):
     center = ksize // 2 
     xs = (np.arange(ksize, dtype=np.float32) - center) # 元素与矩阵中心的横向距离 
-    kernel1d = c * np.exp(-(xs ** 2) / (2 * sigma ** 2)) # 计算一维卷积核# 根据指数函数性质，利用矩阵乘法快速计算二维卷积核    
+    kernel1d = np.sqrt(c) * np.exp(-(xs ** 2) / (2 * sigma ** 2)) # 计算一维卷积核# 根据指数函数性质，利用矩阵乘法快速计算二维卷积核    
     kernel2d = kernel1d[..., None] @ kernel1d[None, ...]   #@矩阵乘法 得到2维卷积核
     kernel2d = torch.from_numpy(kernel2d)    
     kernel2d = kernel2d / kernel2d.sum() # 归一化

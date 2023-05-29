@@ -170,13 +170,13 @@ class arcscan():
         Oj = self.normalized_O_(Oj)
         
         #A66
-        Dj = -value['Dj'] + self.Uj + self.Tj + 0.1 * self.neuron(signal_m_function(value['Oj']), self.W_od)   #待修改
+        Dj = -value['Dj'] + self.Uj + self.Tj + 0.1 * self.neuron1d(signal_m_function(value['Oj']), self.W_od)   #待修改
         Dj = self.normalized_D_(Dj)
 
-        Fj = (-value['Fj'] + (0.5 * signal_m_function(value['Oj']) * self.W_of + self.G) * (1 + torch.sum(value['Dj'] * self.W_df + torch.sum(signal_m_function(value['Nj']) * self.W_nf)))) * self.dt * 20 + value['Fj']
+        Fj = (-value['Fj'] + (0.5 * signal_m_function(value['Oj']) * self.W_of + self.G) * (1 + self.neuron1d(value['Dj'] * self.W_df + self.neuron1d(signal_m_function(value['Nj']), self.W_nf)))) * self.dt * 20 + value['Fj']
         Fj = self.normalized_F_(Fj)
 
-        Nj = (- value['Nj'] + torch.sum(signal_m_function(value['Fj']) * self.W_fn) + self.Pj) * 20 * self.dt
+        Nj = (- value['Nj'] + self.neuron1d(signal_m_function(value['Fj']), self.W_fn) + self.Pj) * 20 * self.dt
         Nj = self.normalized_N_(Nj)
         value_dic = {"Vjiq":Vjiq, "Oj":Oj, "Dj":Dj, "Fj":Fj, "Nj":Nj}
         self.update(value_dic)
@@ -186,6 +186,11 @@ class arcscan():
         for i in range(input.shape[0]):
             sum_ne += (input[i]*W.unsqueeze(dim=2)).sum()
         return sum_ne
+
+    def neuron1d(self, input, W):
+        sum_ne = (input*W.unsqueeze(dim=1)).sum()
+        return sum_ne
+
 
         # self.W_ov = (signal_m_function(self.Oj) * F.relu(self.Vjiq) * (F.relu(self.Vjiq) - self.W_ov)) * self.dt + self.W_ov
 

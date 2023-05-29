@@ -571,7 +571,7 @@ class arcscan():
 
         sumvb = 0
         for i in range(self.Vjq.shape[0]):
-            sumvb += torch.sum(Vjq[i]*self.W )
+            sumvb += torch.sum(Vjq[i]*self.W.transpose(1,0))
 
         output = []
         for i in range(len(Z_complex_cells)):

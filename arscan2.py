@@ -107,15 +107,17 @@ class arcscan():
                         "Nj": torch.zeros( (100) )}]
 
         #up
-        self.W_vo = torch.ones( (self.size_) )
-        self.W_od = torch.ones( (100) )
-        self.W_df = torch.ones( (100) )
-        self.W_fn = torch.ones( (100) )
-        self.W_of = torch.ones( (100) )
-        #down
-        self.W_nf = torch.ones( (100) )
+        self.W_vo = torch.ones( (self.batch, 100, 100) )
+        self.W_ov = torch.ones( (self.batch, 100, 100) )
+
+        self.W_od = torch.ones( (100,100) )
+        self.W_df = torch.ones( (100, 100) )
+
+        self.W_fn = torch.ones( (100, 100) )
+        self.W_nf = torch.ones( (100, 100) )
+
+        self.W_of = torch.ones( (100) )        
         self.W_fo = torch.ones( (100) )
-        self.W_ov = torch.ones( (self.size_) )
 
         self.W_ve = torch.ones_like((self.Eij))  #****
         self.EIJ = torch.zeros_like(self.Eij)
@@ -163,17 +165,17 @@ class arcscan():
         self.Vjq = self.normalized_V_(input)
         value = self.t_view[0]
         #Vjiq
-        Vjiq = (-0.01 * value["Vjiq"] + self.t * ((1 + torch.sum(self.W_ov * signal_m_function(value["Oj"]),dim=1)).unsqueeze(dim=1) * (half_rectified(self.Vjq) + self.G)) - self.Rwhere) * self.dt + value["Vjiq"]
+        Vjiq = (-0.01 * value["Vjiq"] + self.t * ((1 + torch.sum(self.W_ov * signal_m_function(value["Oj"]))) * (F.relu(self.Vjq) + self.G)) - self.Rwhere) * self.dt + value["Vjiq"]
         
         #A63
-        Oj = value['Oj'] + self.dt * (-value['Oj'] + (1 + 2 * value['Fj'] * self.W_fo) * (0.5 * self.neuron(signal_m_function(F.relu(value['Vjiq'])), self.W_vo)  + self.G) - self.Rwhere)
+        Oj = value['Oj'] + self.dt * (-value['Oj'] + (1 + 2 * value['Fj'] * self.W_fo) * (0.5 * self.neuron3d(signal_m_function(F.relu(value['Vjiq'])), self.W_vo)  + self.G) - self.Rwhere)
         Oj = self.normalized_O_(Oj)
         
         #A66
         Dj = -value['Dj'] + self.Uj + self.Tj + 0.1 * self.neuron1d(signal_m_function(value['Oj']), self.W_od)   #待修改
         Dj = self.normalized_D_(Dj)
 
-        Fj = (-value['Fj'] + (0.5 * signal_m_function(value['Oj']) * self.W_of + self.G) * (1 + self.neuron1d(value['Dj'] * self.W_df + self.neuron1d(signal_m_function(value['Nj']), self.W_nf)))) * self.dt * 20 + value['Fj']
+        Fj = (-value['Fj'] + (0.5 * signal_m_function(value['Oj']) * self.W_of + self.G) * (1 + self.neuron1d(value['Dj'], self.W_df) + self.neuron1d(signal_m_function(value['Nj']), self.W_nf))) * self.dt * 20 + value['Fj']
         Fj = self.normalized_F_(Fj)
 
         Nj = (- value['Nj'] + self.neuron1d(signal_m_function(value['Fj']), self.W_fn) + self.Pj) * 20 * self.dt
@@ -181,33 +183,47 @@ class arcscan():
         value_dic = {"Vjiq":Vjiq, "Oj":Oj, "Dj":Dj, "Fj":Fj, "Nj":Nj}
         self.update(value_dic)
         
-    def neuron(self, input, W):
+    def neuron2d(self, input, W):
         sum_ne = 0
         for i in range(input.shape[0]):
             sum_ne += (input[i]*W.unsqueeze(dim=2)).sum()
         return sum_ne
 
     def neuron1d(self, input, W):
-        sum_ne = (input*W.unsqueeze(dim=1)).sum()
+        sum_ne = (input*W.unsqueeze(dim=2)).sum()
         return sum_ne
 
+    def neuron3d(self, input, W):
+        sum_ne = 0
+        for i in range(input.shape[0]):
+            sum_ne += (input[i]*W[i].unsqueeze(dim=2)).sum()
+        return sum_ne
 
         # self.W_ov = (signal_m_function(self.Oj) * F.relu(self.Vjiq) * (F.relu(self.Vjiq) - self.W_ov)) * self.dt + self.W_ov
 
     def part2_down(self):
         value = self.t_view[1]
-        #80
-        self.W_fn = signal_m_function(value['Fj']) * (signal_m_function(value['Nj']) - self.W_fn) * self.dt /50 + self.W_fn
+        #A75
+        self.W_ov = (signal_m_function(value['Oj']) * F.relu(value['Vjiq']).unsqueeze(dim=2) * self.W_reduce(F.relu(value['Vjiq']), self.W_ov)) * self.dt/50 + self.W_ov
         #A76
-        self.W_of = (signal_m_function(value['Oj'])* (signal_m_function(value['Fj']) - self.W_of)) * self.dt / 50 + self.W_of
+        self.W_of = (signal_m_function(value['Oj'])* self.W_reduce(signal_m_function(value['Fj']), self.W_of)) * self.dt / 50 + self.W_of
+        #A77
+        self.W_fo = (signal_m_function(value['Fj']) * signal_m_function(value['Oj']) * self.W_reduce(signal_m_function(value['Oj']), self.W_fo)) * self.dt/50 + self.W_fo
         #A78
-        self.W_od = signal_m_function(value['Oj']) * signal_m_function(value['Dj']) * (signal_m_function(value['Dj']) - self.W_od) * self.dt / 50 + self.W_od
+        self.W_od = signal_m_function(value['Oj']) * signal_m_function(value['Dj']) * self.W_reduce(signal_m_function(value['Dj']), self.W_od) * self.dt / 50 + self.W_od
+        #A79
+        self.W_df = signal_m_function(value['Dj']) * signal_m_function(value['Fj']) * self.W_reduce(signal_m_function(value['Fj']), self.W_df) * self.dt/50+ self.W_df
+        #80
+        self.W_fn = signal_m_function(value['Fj']) * self.W_reduce(signal_m_function(value['Nj']), self.W_fn) * self.dt /50 + self.W_fn
         
-        self.W_nf = signal_m_function(value['Nj']) * signal_m_function(value['Fj']) *(signal_m_function(value['Fj']) - self.W_nf) * self.dt /50 + self.W_nf
+        self.W_nf = signal_m_function(value['Nj']) * signal_m_function(value['Fj']) * self.W_reduce(signal_m_function(value['Fj']), self.W_nf) * self.dt /50 + self.W_nf
         # self.Fj = (-self.Fj + (0.5 * signal_m_function(self.Oj) * self.W_of + self.G) * (1 + torch.sum(self.Dj * self.W_df + torch.sum(signal_m_function(self.Ni) * self.W_nf)))) * self.dt * 20 + self.Fj
-        self.W_fo = (signal_m_function(value['Fj']) * signal_m_function(value['Oj']) * (signal_m_function(value['Oj']) - self.W_fo)) * self.dt/50 + self.W_fo
         # self.Oj = self.build_Invariant_object_category(self.Vjiq)
-        self.W_ov = (signal_m_function(value['Oj']) * F.relu(value['Vjiq']) * (F.relu(value['Vjiq']) - self.W_ov)) * self.dt/50 + self.W_ov
+    def W_reduce(self, input, W):
+        output = []
+        for i in range(input.shape[0]):
+            output.append((input[i]-W[i]).unsqueeze(dim=0))
+        return torch.cat(output,dim=0)
 
     # def part3(self):
     #     for i in range(40):

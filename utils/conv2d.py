@@ -64,7 +64,6 @@ def GaussianBlur(batch_img, ksize, sigmac, sigmas):
         i+= 1
         kern_c = kern_c.view(1, 1, ks, ks).repeat(C, 1, 1, 1)
         kern_s = kern_s.view(1, 1, ks, ks).repeat(C, 1, 1, 1)
-        # kern_g = kern_g.view(1, 1, ks, ks).repeat(C, 1, 1, 1)
 
         pad = (ks - 1) // 2 # 保持卷积前后图像尺寸不变# mode=relfect 更适合计算边缘像素的权重    
         batch_img_pad = F.pad(batch_img, pad=[pad, pad, pad, pad], mode='constant')    
@@ -77,10 +76,9 @@ def GaussianBlur(batch_img, ksize, sigmac, sigmas):
         weighted_pix_off = -weighted_pix_on
         #on cell
         #A4
-        weighted_pix_on = torch.where(weighted_pix_on < 0, 0, weighted_pix_on)
-        weighted_pix_off = torch.where(weighted_pix_off < 0, 0, weighted_pix_off)
-        # weighted_pix_on = F.pad(weighted_pix_on, pad=[pad, pad, pad, pad], mode='constant')
-        # weighted_pix_on = F.conv2d(weighted_pix_on, weight=kern_g, bias=None, stride=1, padding=0, groups=C)
+        weighted_pix_on = F.relu(weighted_pix_on)   #torch.where(weighted_pix_on < 0, 0, weighted_pix_on)
+        weighted_pix_off =F.relu(weighted_pix_off)     #torch.where(weighted_pix_off < 0, 0, weighted_pix_off)
+
         weighted_pix_on = weighted_pix_on * (1 + kernel_G)
         weighted_pixs_on.append(weighted_pix_on)
         #A5

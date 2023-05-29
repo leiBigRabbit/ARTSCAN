@@ -66,10 +66,10 @@ def complex_cells(Y_ons, Y_offs):
     input = np.array([Y_add, Y_cuts]).sum(axis=0)
     # type_input(input, "output_on1", 1)
     #A17
-    L_gskernel = gaussianKernel(7, 1, 1)
+    L_gskernel = gaussianKernel(5, 1, 1/(2*np.pi))
     output = []
     for Z in input:
-        complex = half_rectified(Z ** 2 / (0.01 + gaussianconv_2d(Z**2, L_gskernel, (3,3))))
+        complex = F.relu(Z ** 2 / (0.01 + gaussianconv_2d(Z**2, L_gskernel, (5,5))))
         output.append(complex)
     return output
 
@@ -80,7 +80,6 @@ class arcscan():
         self.size = size
         self.batch = 25
         self.size_ = (self.batch, size[0]//5)
-        self.Rwhere = 0
         self.category = 100
         self.Object_surface_ons = [torch.zeros(size), torch.zeros(size), torch.zeros(size)]
         self.Object_surface_offs = [torch.zeros(size), torch.zeros(size), torch.zeros(size)]
@@ -94,14 +93,14 @@ class arcscan():
         self.W = torch.ones( (self.c_max, 20000) )
         self.fuzzy_ART = fuzzy_ART(X_size=100 * 100, c_max=100, rho=0.85, alpha=0.00001, beta=1)
         self.t = t
-        self.Vjq = torch.zeros( (self.batch, 100) )
+        self.Vjq = torch.zeros( (self.batch, self.category) )
 
-        self.t_view = [{"Vjiq": torch.zeros( (100) ),
+        self.t_view = [{"Vjiq": torch.zeros( (self.batch, self.category) ),
                         "Oj": torch.zeros( (100) ), 
                         "Fj": torch.zeros( (100) ), 
                         "Dj": torch.zeros( (100) ), 
                         "Nj": torch.zeros( (100) )},
-                       {"Vjiq": torch.zeros( (100) ),
+                       {"Vjiq": torch.zeros( (self.batch, self.category) ),
                         "Oj": torch.zeros( (100) ), 
                         "Fj": torch.zeros( (100) ), 
                         "Dj": torch.zeros( (100) ), 
@@ -109,29 +108,30 @@ class arcscan():
 
         #up
         self.W_vo = torch.ones( (self.size_) )
-        self.W_od = torch.ones( (self.size_) )
-        self.W_df = torch.ones( (self.size_) )
-        self.W_fn = torch.ones( (self.size_) )
-        self.W_of = torch.ones( (self.size_) )
+        self.W_od = torch.ones( (100) )
+        self.W_df = torch.ones( (100) )
+        self.W_fn = torch.ones( (100) )
+        self.W_of = torch.ones( (100) )
         #down
-        self.W_nf = torch.ones( (self.size_) )
+        self.W_nf = torch.ones( (100) )
         self.W_fo = torch.ones( (100) )
         self.W_ov = torch.ones( (self.size_) )
 
         self.W_ve = torch.ones_like((self.Eij))  #****
         self.EIJ = torch.zeros_like(self.Eij)
-        self.Amn = torch.zeros(1, 1, size[0]*2, size[1]*2)
+        self.Amn = torch.zeros(1, 1, size[0], size[1])
         self.Y_ijE = torch.zeros(size)
         self.Y_ijA = torch.zeros(size)
 
-        self.Eij, self.Y_ij = torch.zeros(self.size), torch.zeros(self.size)
+        self.Y_ij = torch.zeros(self.size)
         self.Rwhere = Rwhere
+        self.yR = 0
         self.key = key
         self.G = self.get_G(self.key)
         self.Uj = 0
         self.Tj = 0
         self.Pj = 0
-        self.max_place = 0
+        self.max_place = [250, 250]
         self.K_e = 10**-7
 
     def update(self, value):
@@ -142,16 +142,21 @@ class arcscan():
         Z = input["Z"], 
         imgsc_on =  input["imgsc_on"]
         imgsc_off = input["imgsc_off"]
-        for i in range(40):
-            self.B = self.Boundaries(Z[0])
-            self.Object_surface_ons = self.Surface_filling_in_(self.B, self.Object_surface_ons, imgsc_on)
-            self.Object_surface_offs = self.Surface_filling_in_(self.B, self.Object_surface_offs, imgsc_off)
-            self.Cij = self.Surface_contours()
-            type_input(self.Cij, "Cij", 1)
-            self.S_ij = 0.05 * (self.Object_surface_ons[0] + self.Object_surface_offs[0]) + 0.1 * (self.Object_surface_ons[1] + self.Object_surface_offs[1]) + 0.85 * (self.Object_surface_ons[2] + self.Object_surface_offs[2])
-            self.Eye_movements_map()
-            self.Gain_field()
-            self.attention_shroud()        
+        # for i in range(20):
+        self.B = self.Boundaries(Z[0])
+        self.Object_surface_ons = self.Surface_filling_in_(self.B, self.Object_surface_ons, imgsc_on)
+        self.Object_surface_offs = self.Surface_filling_in_(self.B, self.Object_surface_offs, imgsc_off)
+        self.Cij = self.Surface_contours()
+        type_input(self.Cij, "Cij", 1)
+        self.S_ij = 0.05 * (self.Object_surface_ons[0] + self.Object_surface_offs[0]) + 0.1 * (self.Object_surface_ons[1] + self.Object_surface_offs[1]) + 0.85 * (self.Object_surface_ons[2] + self.Object_surface_offs[2])
+        self.Eye_movements_map()
+        self.Gain_field()
+        self.attention_shroud()
+        self.Reset()    
+        self.Y_R()    
+
+    def Y_R(self):
+        self.yR = 6*(2-self.yR - 2*self.yR *self.Rwhere) * self.dt + self.yR
     # return self.B
     #view category integrators
     def part2_up(self, input):
@@ -161,11 +166,11 @@ class arcscan():
         Vjiq = (-0.01 * value["Vjiq"] + self.t * ((1 + torch.sum(self.W_ov * signal_m_function(value["Oj"]),dim=1)).unsqueeze(dim=1) * (half_rectified(self.Vjq) + self.G)) - self.Rwhere) * self.dt + value["Vjiq"]
         
         #A63
-        Oj = value['Oj'] + self.dt * (-value['Oj'] + (1 + 2 * value['Fj'] * self.W_fo) * (0.5 * torch.sum(signal_m_function(half_rectified_relu(value['Vjiq']))* self.W_vo)  + self.G) - self.Rwhere)
+        Oj = value['Oj'] + self.dt * (-value['Oj'] + (1 + 2 * value['Fj'] * self.W_fo) * (0.5 * self.neuron(signal_m_function(F.relu(value['Vjiq'])), self.W_vo)  + self.G) - self.Rwhere)
         Oj = self.normalized_O_(Oj)
         
         #A66
-        Dj = -value['Dj'] + self.Uj + self.Tj + 0.1 * torch.sum(signal_m_function(value['Oj']) * self.W_od)   #待修改
+        Dj = -value['Dj'] + self.Uj + self.Tj + 0.1 * self.neuron(signal_m_function(value['Oj']), self.W_od)   #待修改
         Dj = self.normalized_D_(Dj)
 
         Fj = (-value['Fj'] + (0.5 * signal_m_function(value['Oj']) * self.W_of + self.G) * (1 + torch.sum(value['Dj'] * self.W_df + torch.sum(signal_m_function(value['Nj']) * self.W_nf)))) * self.dt * 20 + value['Fj']
@@ -176,7 +181,12 @@ class arcscan():
         value_dic = {"Vjiq":Vjiq, "Oj":Oj, "Dj":Dj, "Fj":Fj, "Nj":Nj}
         self.update(value_dic)
         
-    
+    def neuron(self, input, W):
+        sum_ne = 0
+        for i in range(input.shape[0]):
+            sum_ne += (input[i]*W.unsqueeze(dim=2)).sum()
+        return sum_ne
+
         # self.W_ov = (signal_m_function(self.Oj) * F.relu(self.Vjiq) * (F.relu(self.Vjiq) - self.W_ov)) * self.dt + self.W_ov
 
     def part2_down(self):
@@ -194,16 +204,15 @@ class arcscan():
         # self.Oj = self.build_Invariant_object_category(self.Vjiq)
         self.W_ov = (signal_m_function(value['Oj']) * F.relu(value['Vjiq']) * (F.relu(value['Vjiq']) - self.W_ov)) * self.dt/50 + self.W_ov
 
-    def part3(self):
-        for i in range(40):
-            self.Eye_movements_map()
-        self.Gain_field()
-        self.attention_shroud()
-        self.Reset()
+    # def part3(self):
+    #     for i in range(40):
+    #         self.Eye_movements_map()
+    #     self.Gain_field()
+    #     self.attention_shroud()
+    #     self.Reset()
 
     def train(self, input):
         self.part1(input)
-        self.part3()
         input_B = self.Vector_Bq(self.B)
         _,_,self.W,V = self.fuzzy_ART.train_(input_B, self.t_view[0]["Vjiq"])
         self.part2_up(V)
@@ -212,8 +221,7 @@ class arcscan():
     # B.4. Object category reset by transient parietal bursts
     #A50
     def Reset(self, e=0.07):
-        r_where = 100 * half_rectified(100/(100 + signal_k_function(self.Amn).sum()) - e)
-        return r_where
+        self.Rwhere = 100 * F.relu(100/(100 + signal_k_function(self.Amn).sum()) - e)
 
     # Gain field
     def Gain_field(self):
@@ -228,32 +236,38 @@ class arcscan():
     #A37
     def attention_shroud(self):
         kernel_C = gaussianKernel(19, 4, 0.1)
-        kernel_E = gaussianKernel(1500, 200, 1/(10**5 * 2))
+        kernel_E = gaussianKernel(19, 200, 1/(10**5 * 2))
         gA = signal_g_function(self.Amni)
         fA = signal_f_function(self.Amn)
         self.habituative_transmitter_A()
         input_A = gA * (1 + 0.2 * gaussianconv_2d(fA, kernel_C, 19)) * (1 - self.Amn) *self.Y_ijA - 0.1*self.Amn        
-        second = -self.Amn * gaussianconv_2d(gA + fA, kernel_E, 1500) + 10 * self.Rwhere
+        #***
+        second = -self.Amn * gaussianconv_2d(gA + fA, kernel_E.float(), 19) + 10 * self.Rwhere * self.yR
         self.Amn = (input_A + second) * 10 * self.dt + self.Amn
 
     def Eye_movements_map(self):
         K_kernel = gaussianKernel(35, 5, 1/(2 * np.pi*25))
-        J_kernel = gaussianKernel(7, 1, 1/(2*np.pi))
+        J_kernel = gaussianKernel(5, 1, 1/(2*np.pi))
         #A45
-        inter_value_J = gaussianconv_2d((self.Eij**2).unsqueeze(dim=0).unsqueeze(dim=1).float(), J_kernel, 7)
+        inter_value_J = gaussianconv_2d((self.Eij**2).unsqueeze(dim=0).unsqueeze(dim=1).float(), J_kernel, 5)
         #A46
         inter_value_K = gaussianconv_2d((self.Eij**2).unsqueeze(dim=0).unsqueeze(dim=1).float(), K_kernel, 35)
         #A47
         self.habituative_transmitter_E(inter_value_J)
-        h_Eij = self.sign_h()
-        if  h_Eij != 0:
-            self.W_ve = signal_m_function(self.Vjq) * h_Eij * (self.Eij - self.W_ve) * 500 * self.dt + self.W_ve
         Vjq = signal_m_function(self.Vjq)
+
+        h_Eij = self.sign_h()
+        if  h_Eij == 1:
+            sumve = 0
+            for i in range(self.Vjq.shape[0]):
+                sumve += (Vjq[i]* (self.Eij - self.W_ve).unsqueeze(dim=2)).sum()
+                self.W_ve = sumve * h_Eij * 500 * self.dt + self.W_ve
+        
         sumvw = 0
         for i in range(self.Vjq.shape[0]):
-            sumvw += torch.sum(Vjq[i]*self.W_ve.unsqueeze(dim=2), dim=2)
+            sumvw += (Vjq[i]*self.W_ve.unsqueeze(dim=2)).sum()
 
-        Eij = F.relu(self.Cij)+625*inter_value_J + sumvw.unsqueeze(dim=0).unsqueeze(dim=0)
+        Eij = F.relu(self.Cij)+625*inter_value_J + sumvw
         Eij = self.Y_ijE*(1-self.Eij.unsqueeze(dim=0).unsqueeze(dim=0))*Eij
         Eij = Eij - 0.01 * self.Eij * torch.sum(F.relu(self.Cij) + inter_value_K)
         Eij = Eij-self.Eij
@@ -261,27 +275,28 @@ class arcscan():
 
         max_value = torch.max(self.Eij)
 
-        if max_value>0.58:
+        if max_value>0.5*10**-7:  #0.58
             self.max_place = (self.Eij==torch.max(self.Eij)).nonzero()[0]
-            self.EIJ[self.max_place[0]][self.max_place[1]][self.max_place[2]][self.max_place[3]] = max_value
+            self.EIJ[self.max_place[0]][self.max_place[1]] = max_value
 
 
     def shifted_map(self, input, key):
         B, C, H, W = input.shape
         #定义扩张后的眼球map
-        c=np.zeros((B, C, H*3, W*3))
+        c=torch.zeros((B, C, H*2, W*2))
         #赋值0.5后嵌入原S的视图
         c[:] = 0.5
-        c[:, :, H:2*H, W:2*W] = input
         #中间位置y,x平移(k,l)个单位A32中的S(m-k,n-l)
-        if self.max_place:
-            if key:
-                output = c[:, :, H - self.max_place[2]:2*H - self.max_place[2], W - self.max_place[3]: 2*W - self.max_place[3]]
-            else:
-                output = c[:, :, H + self.max_place[2]:2*H + self.max_place[2], W + self.max_place[3]: 2*W + self.max_place[3]]
-            return output
+        # if self.max_place is None:
+        if key:
+            c[:, :, H//2-1:int(1.5*H)-1, W//2:int(1.5*W)] = input
+            output = c[:, :, self.max_place[0]:500 + self.max_place[0], self.max_place[1]: 500 + self.max_place[1]]
         else:
-            return c
+            c[:, :, self.max_place[0]:500 + self.max_place[0], self.max_place[1]: 500 + self.max_place[1]] = input
+            output = c[:, :, H//2-1:int(1.5*H)-1, W//2:int(1.5*W)]
+        return output
+        # else:
+        #     return input
         
 
     #A42
@@ -498,18 +513,18 @@ class arcscan():
     def Surface_contours(self):
         Jpq_on = 0.8 * self.Object_surface_ons[0] + 0.1 * self.Object_surface_ons[1] + 0.1 * self.Object_surface_ons[2]
         Jpq_off = 0.8 * self.Object_surface_offs[0] + 0.1 * self.Object_surface_offs[1] + 0.1 * self.Object_surface_offs[2]
-        K_on_kernel = gaussianKernel(ksize=29, sigma=1, c=1/(2 * np.pi))
-        K_off_kernel = gaussianKernel(ksize=29, sigma=3, c = 1/(2*np.pi*9))
+        K_on_kernel = gaussianKernel(ksize=17, sigma=1, c=1/(2 * np.pi))
+        K_off_kernel = gaussianKernel(ksize=17, sigma=3, c = 1/(2*np.pi*9))
         J = Jpq_on - Jpq_off
         Kernel_add = K_on_kernel + K_off_kernel
         Kernel_cut = K_on_kernel - K_off_kernel
         Kernel_cut1 = K_off_kernel - K_on_kernel
         # plt.subplot(4, 3, 1)   #plt.subplot(nrows, ncols, index)
         # plt.imshow(Kernel_add)
-        molecular = gaussianconv_2d(J, Kernel_cut, 5)
-        denominator = 40 + gaussianconv_2d(J, Kernel_add, 5)
-        molecular1 = gaussianconv_2d(J, Kernel_cut1, 5)
-        output_C = half_rectified_relu(molecular / denominator) + half_rectified(molecular1 / denominator)
+        molecular = gaussianconv_2d(J, Kernel_cut, 17)
+        denominator = 40 + gaussianconv_2d(J, Kernel_add, 17)
+        molecular1 = gaussianconv_2d(J, Kernel_cut1, 17)
+        output_C = F.relu(molecular / denominator) + F.relu(molecular1 / denominator)
         return output_C
 
     #A22
@@ -546,12 +561,12 @@ class arcscan():
             if i == 2:
                 B_denominator = 0.1 + Z_complex_cells[i] * (1 + 10**4 * C_S2d + sumvb) + 0.4 * self.Cij.sum()
                 B_molecular = Z_complex_cells[i] * (1 + 10**4 * C_S2d + sumvb)  #- 0.4 * C_Surface_contours.sum()
-                B = half_rectified(B_molecular/B_denominator)
+                B = F.relu(B_molecular/B_denominator)
                 output.append(B)
             else:
                 B_denominator = 0.1 + Z_complex_cells[i] * (1 + 10**4 * C_S2d) + 0.4 * self.Cij.sum()
                 B_molecular = Z_complex_cells[i] * (1 + 10**4 * C_S2d) - 0.4 * self.Cij.sum()
-                B = half_rectified(B_molecular/B_denominator)
+                B = F.relu(B_molecular/B_denominator)
                 output.append(B)
         return output
  

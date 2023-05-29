@@ -126,7 +126,7 @@ class fuzzy_ART:
         self.N = 0         # no. of categories initialized to zero
         self.W = torch.ones( (self.c_max, self.M*2) ).to(self.device) # initialize weigts with 1s
         self.I_sum=torch.tensor([X_size]).to(self.device)
-        self.V = torch.zeros( (25, 100) ).to(self.device)
+        self.V = torch.zeros( (25, self.c_max) ).to(self.device)
     def complement_code(self,X,device,X_dtype="cpu"):
         if X_dtype=="cpu":
             I = X.to(device)
@@ -220,7 +220,7 @@ class fuzzy_ART:
         
         if match_num==batch_num:
             return True,match_num*1.0/batch_num, self.W, self.V
-        return False,match_num*1.0/batch_num
+        return False,match_num*1.0/batch_num, self.W, self.V
 
 
     def train_batch(self, argument, X_dtype="cpu"):

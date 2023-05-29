@@ -80,44 +80,42 @@ class arcscan():
         self.size = size
         self.batch = 25
         self.size_ = (self.batch, size[0]//5)
-        self.category = 100
+        self.category = 12
         self.Object_surface_ons = [torch.zeros(size), torch.zeros(size), torch.zeros(size)]
         self.Object_surface_offs = [torch.zeros(size), torch.zeros(size), torch.zeros(size)]
         self.Eij = torch.zeros(size)
         self.Y_ij = torch.zeros(size)
         self.Cij = torch.zeros(1, 1, size[0], size[1])
         self.Sijf = torch.zeros(size)
-        self.M = torch.zeros(size)
         self.B = torch.zeros(size)
-        self.c_max = 100
-        self.W = torch.ones( (self.c_max, 20000) )
-        self.fuzzy_ART = fuzzy_ART(X_size=100 * 100, c_max=100, rho=0.85, alpha=0.00001, beta=1)
+        self.W = torch.ones( (self.category, 20000) )
+        self.fuzzy_ART = fuzzy_ART(X_size=100 * 100, c_max=self.category, rho=0.85, alpha=0.00001, beta=1)
         self.t = t
         self.Vjq = torch.zeros( (self.batch, self.category) )
 
         self.t_view = [{"Vjiq": torch.zeros( (self.batch, self.category) ),
-                        "Oj": torch.zeros( (100) ), 
-                        "Fj": torch.zeros( (100) ), 
-                        "Dj": torch.zeros( (100) ), 
-                        "Nj": torch.zeros( (100) )},
+                        "Oj": torch.zeros( (self.category) ), 
+                        "Fj": torch.zeros( (self.category) ), 
+                        "Dj": torch.zeros( (self.category) ), 
+                        "Nj": torch.zeros( (self.category) )},
                        {"Vjiq": torch.zeros( (self.batch, self.category) ),
-                        "Oj": torch.zeros( (100) ), 
-                        "Fj": torch.zeros( (100) ), 
-                        "Dj": torch.zeros( (100) ), 
-                        "Nj": torch.zeros( (100) )}]
+                        "Oj": torch.zeros( (self.category) ), 
+                        "Fj": torch.zeros( (self.category) ), 
+                        "Dj": torch.zeros( (self.category) ), 
+                        "Nj": torch.zeros( (self.category) )}]
 
         #up
-        self.W_vo = torch.ones( (self.batch, 100, 100) )
-        self.W_ov = torch.ones( (self.batch, 100, 100) )
+        self.W_vo = torch.ones( (self.batch, self.category, self.category) )
+        self.W_ov = torch.ones( (self.batch, self.category, self.category) )
 
-        self.W_od = torch.ones( (100,100) )
-        self.W_df = torch.ones( (100, 100) )
+        self.W_od = torch.ones( (self.category, self.category) )
+        self.W_df = torch.ones( (self.category, self.category) )
 
-        self.W_fn = torch.ones( (100, 100) )
-        self.W_nf = torch.ones( (100, 100) )
+        self.W_fn = torch.ones( (self.category, self.category) )
+        self.W_nf = torch.ones( (self.category, self.category) )
 
-        self.W_of = torch.ones( (100) )        
-        self.W_fo = torch.ones( (100) )
+        self.W_of = torch.ones( (self.category) )        
+        self.W_fo = torch.ones( (self.category) )
 
         self.W_ve = torch.ones_like((self.Eij))  #****
         self.EIJ = torch.zeros_like(self.Eij)
@@ -125,7 +123,6 @@ class arcscan():
         self.Y_ijE = torch.zeros(size)
         self.Y_ijA = torch.zeros(size)
 
-        self.Y_ij = torch.zeros(self.size)
         self.Rwhere = Rwhere
         self.yR = 0
         self.key = key
@@ -133,7 +130,7 @@ class arcscan():
         self.Uj = 0
         self.Tj = 0
         self.Pj = 0
-        self.max_place = [250, 250]
+        self.max_place = [249, 249]
         self.K_e = 10**-7
 
     def update(self, value):
@@ -146,11 +143,15 @@ class arcscan():
         imgsc_off = input["imgsc_off"]
         # for i in range(20):
         self.B = self.Boundaries(Z[0])
+        type_input(self.B, "B", 1)
         self.Object_surface_ons = self.Surface_filling_in_(self.B, self.Object_surface_ons, imgsc_on)
+        type_input(self.Object_surface_ons, "Object_surface_ons", 1)
         self.Object_surface_offs = self.Surface_filling_in_(self.B, self.Object_surface_offs, imgsc_off)
+        type_input(self.Object_surface_offs, "Object_surface_offs", 1)
         self.Cij = self.Surface_contours()
         type_input(self.Cij, "Cij", 1)
         self.S_ij = 0.05 * (self.Object_surface_ons[0] + self.Object_surface_offs[0]) + 0.1 * (self.Object_surface_ons[1] + self.Object_surface_offs[1]) + 0.85 * (self.Object_surface_ons[2] + self.Object_surface_offs[2])
+        type_input(self.S_ij, "S_ij", 1)
         self.Eye_movements_map()
         self.Gain_field()
         self.attention_shroud()
@@ -296,10 +297,9 @@ class arcscan():
 
         max_value = torch.max(self.Eij)
 
-        if max_value>0.5*10**-7:  #0.58
+        if max_value>0.58:  #0.58
             self.max_place = (self.Eij==torch.max(self.Eij)).nonzero()[0]
-            self.EIJ[self.max_place[0]][self.max_place[1]] = max_value
-
+            self.Eij[self.max_place[0]][self.max_place[1]] = max_value
 
     def shifted_map(self, input, key):
         B, C, H, W = input.shape
@@ -571,7 +571,7 @@ class arcscan():
 
         sumvb = 0
         for i in range(self.Vjq.shape[0]):
-            sumvb += torch.sum(Vjq[i]*self.W.transpose(1,0))
+            sumvb += torch.sum(Vjq[i]*self.W )
 
         output = []
         for i in range(len(Z_complex_cells)):
@@ -596,9 +596,8 @@ class arcscan():
 def main():
     global argument
     argument = {}
-    argument["dt"] = 0.05
 
-    img = data_process("/Users/leilei/Desktop/ARTSCAN/image.jpg")
+    img = data_process("/Users/leilei/Desktop/ARTSCAN/output.png")
     #A.1. Retina and LGN cells
     imgsc_on, imgsc_off = GaussianBlur(img, [5,17,41], sigmac = [0.3, 0.75, 2], sigmas = [1, 3, 7])
     #A.2. V1 polarity-sensitive oriented simple cells
@@ -607,14 +606,19 @@ def main():
     Y_ons, Y_offs = Gabor_conv(imgsc_on, imgsc_off, sigmav= [3, 4.5, 6], sigmah = [1, 1.5, 2], Lambda = [3, 5, 7], angles = [0, 45, 90, 135], K_size = [(19,19), (29,29), (39,39)])
     #A16
     Z = complex_cells(Y_ons, Y_offs)
+    type_input(Z, "Z", 1)
     argument["Z"] = Z 
     argument["imgsc_on"] = imgsc_on
     argument["imgsc_off"] = imgsc_off
     model1 = arcscan(size=(500,500))
-    for t in range(1,40):
+    eye_path = cv2.imread("/Users/leilei/Desktop/ARTSCAN/output.png")
+    max_index = [(int(model1.max_place[0]), int(model1.max_place[1]))]
+    for t in range(25):
         model1.train(argument)
-
-
+        max_index.append((int(model1.max_place[0]), int(model1.max_place[1])))
+        img1 = cv2.circle(eye_path,(int(model1.max_place[0]), int(model1.max_place[1])),5,(0,0,255),-1)
+        img1 = cv2.line(img1, max_index[t+1], max_index[t], (0, 255, 0), 2)
+        cv2.imwrite("/Users/leilei/Desktop/ARTSCAN/output_path.png", img1)
 if __name__ == "__main__":
     main()
 

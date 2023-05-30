@@ -76,7 +76,7 @@ def neurotransmitter_yR(input, r_where, dt=0.05):
 def data_process(url):
     img = cv2.imread(url)
     img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    img = cv2.resize(img, (500, 500))
+    img = cv2.resize(img, (1000, 1000))
     img = torch.from_numpy(img)
     img = img.unsqueeze(dim=0).unsqueeze(dim=1).float()
     return img

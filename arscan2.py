@@ -2,7 +2,6 @@ import torch
 import numpy as np
 import torch.nn.functional as F
 import cv2
-from PIL import Image
 import matplotlib.pyplot as plt
 import torch.nn as nn
 import time
@@ -10,13 +9,7 @@ import math
 from utils.conv2d import gaussianconv_2d, Gabor_conv, GaussianBlur
 from utils.kernel import Gabor_filter, gaussianKernel, getGaussianKernel
 from utils.utils import half_rectified, type_input, data_process, signal_m_function, half_rectified_relu, signal_g_function, signal_f_function, signal_k_function
-from eye_movements import Eye_movements_map
-from Spatial_attentional import attention_shroud
-from gain import Gain_field
-from what_stream import Vector_Bq, activity_V, what_stream
 from fuzzy_ART import fuzzy_ART
-from View_category_integrator import View_category_integrator
-from Invariant_object_category import object_category_neuron
 
 
 #A24中四个领域相加。
@@ -74,22 +67,29 @@ def complex_cells(Y_ons, Y_offs):
     return output
 
 class arcscan():
-    def __init__(self, size=(500, 500), dt = 0.05, t=0.6, Rwhere=0, key="up"):
+    def __init__(self, size=(500, 500), category=12, dt = 0.001, t=0.6, Rwhere=0, key="up"):
         self.device="cpu"
         self.dt = dt
         self.size = size
         self.batch = 25
-        self.size_ = (self.batch, size[0]//5)
-        self.category = 12
+        self.category = category + 1
+
+        self.B = torch.zeros(size)
         self.Object_surface_ons = [torch.zeros(size), torch.zeros(size), torch.zeros(size)]
         self.Object_surface_offs = [torch.zeros(size), torch.zeros(size), torch.zeros(size)]
-        self.Eij = torch.zeros(size)
-        self.Y_ij = torch.zeros(size)
+        self.S_ij = torch.zeros(size)
         self.Cij = torch.zeros(1, 1, size[0], size[1])
+
+        self.Eij = torch.zeros(size)
+        self.Y_ijE = 2 * torch.ones(size)
+
+        self.Y_ijA = 2 * torch.ones(size)
+        self.Amn = torch.zeros(1, 1, size[0], size[1])
         self.Sijf = torch.zeros(size)
-        self.B = torch.zeros(size)
-        self.W = torch.ones( (self.category, 20000) )
+        self.W_ve = torch.ones((self.category,size[0],size[1]))
+        
         self.fuzzy_ART = fuzzy_ART(X_size=100 * 100, c_max=self.category, rho=0.85, alpha=0.00001, beta=1)
+        self.W = torch.ones( (self.category, 20000) )
         self.t = t
         self.Vjq = torch.zeros( (self.batch, self.category) )
 
@@ -117,20 +117,19 @@ class arcscan():
         self.W_of = torch.ones( (self.category) )        
         self.W_fo = torch.ones( (self.category) )
 
-        self.W_ve = torch.ones_like((self.Eij))  #****
-        self.EIJ = torch.zeros_like(self.Eij)
-        self.Amn = torch.zeros(1, 1, size[0], size[1])
-        self.Y_ijE = torch.zeros(size)
-        self.Y_ijA = torch.zeros(size)
-
         self.Rwhere = Rwhere
-        self.yR = 0
+        self.yR = 2
+
         self.key = key
         self.G = self.get_G(self.key)
         self.Uj = 0
         self.Tj = 0
         self.Pj = 0
-        self.max_place = [249, 249]
+
+        self.eye_move = False
+        self.max_place = (249, 249)
+        self.max_place_pre = (249, 249)
+        self.max_place_in_eye = (499, 499)
         self.K_e = 10**-7
 
     def update(self, value):
@@ -163,24 +162,24 @@ class arcscan():
     # return self.B
     #view category integrators
     def part2_up(self, input):
-        self.Vjq = self.normalized_V_(input)
+        self.Vjq = self.normalized2d(input)
         value = self.t_view[0]
         #Vjiq
         Vjiq = (-0.01 * value["Vjiq"] + self.t * ((1 + torch.sum(self.W_ov * signal_m_function(value["Oj"]))) * (F.relu(self.Vjq) + self.G)) - self.Rwhere) * self.dt + value["Vjiq"]
         
         #A63
         Oj = value['Oj'] + self.dt * (-value['Oj'] + (1 + 2 * value['Fj'] * self.W_fo) * (0.5 * self.neuron3d(signal_m_function(F.relu(value['Vjiq'])), self.W_vo)  + self.G) - self.Rwhere)
-        Oj = self.normalized_O_(Oj)
+        Oj = self.normalized1d(Oj)
         
         #A66
         Dj = -value['Dj'] + self.Uj + self.Tj + 0.1 * self.neuron1d(signal_m_function(value['Oj']), self.W_od)   #待修改
-        Dj = self.normalized_D_(Dj)
+        Dj = self.normalized1d(Dj)
 
         Fj = (-value['Fj'] + (0.5 * signal_m_function(value['Oj']) * self.W_of + self.G) * (1 + self.neuron1d(value['Dj'], self.W_df) + self.neuron1d(signal_m_function(value['Nj']), self.W_nf))) * self.dt * 20 + value['Fj']
-        Fj = self.normalized_F_(Fj)
+        Fj = self.normalized1d(Fj)
 
         Nj = (- value['Nj'] + self.neuron1d(signal_m_function(value['Fj']), self.W_fn) + self.Pj) * 20 * self.dt
-        Nj = self.normalized_N_(Nj)
+        Nj = self.normalized1d(Nj)
         value_dic = {"Vjiq":Vjiq, "Oj":Oj, "Dj":Dj, "Fj":Fj, "Nj":Nj}
         self.update(value_dic)
         
@@ -220,18 +219,12 @@ class arcscan():
         self.W_nf = signal_m_function(value['Nj']) * signal_m_function(value['Fj']) * self.W_reduce(signal_m_function(value['Fj']), self.W_nf) * self.dt /50 + self.W_nf
         # self.Fj = (-self.Fj + (0.5 * signal_m_function(self.Oj) * self.W_of + self.G) * (1 + torch.sum(self.Dj * self.W_df + torch.sum(signal_m_function(self.Ni) * self.W_nf)))) * self.dt * 20 + self.Fj
         # self.Oj = self.build_Invariant_object_category(self.Vjiq)
+    
     def W_reduce(self, input, W):
         output = []
         for i in range(input.shape[0]):
             output.append((input[i]-W[i]).unsqueeze(dim=0))
         return torch.cat(output,dim=0)
-
-    # def part3(self):
-    #     for i in range(40):
-    #         self.Eye_movements_map()
-    #     self.Gain_field()
-    #     self.attention_shroud()
-    #     self.Reset()
 
     def train(self, input):
         self.part1(input)
@@ -296,11 +289,27 @@ class arcscan():
         self.Eij = (Eij * self.dt + self.Eij).squeeze(dim=0).squeeze(dim=0)
 
         max_value = torch.max(self.Eij)
-
         if max_value>0.58:  #0.58
+            self.eye_move = True
+            self.max_place_pre = self.max_place
             self.max_place = (self.Eij==torch.max(self.Eij)).nonzero()[0]
-            self.Eij[self.max_place[0]][self.max_place[1]] = max_value
-
+            self.max_place = (int(self.max_place[0]), int(self.max_place[1]))
+            max_0 = self.max_place[0] - self.max_place_pre[0] + self.max_place_in_eye[0]
+            max_1 = self.max_place[1] - self.max_place_pre[1] + self.max_place_in_eye[1]
+            self.max_place_in_eye[0] = self.max_restriction(max_0)
+            self.max_place_in_eye[1] = self.max_restriction(max_1)
+        else:
+            self.eye_move = False
+            # self.Eij[self.max_place[0]][self.max_place[1]] = max_value
+    def max_restriction(self, max_0):
+            if max_0 > 749 :
+                output = 749
+            elif max_0 < 249:
+                output = 249
+            else:
+                output = max_0
+            return output
+    
     def shifted_map(self, input, key):
         B, C, H, W = input.shape
         #定义扩张后的眼球map
@@ -350,31 +359,15 @@ class arcscan():
         # return h_Eij
 
     #A60
-    def normalized_V_(self, V):
+    def normalized1d(self, input):
+        mask = (input == input.max(dim=0, keepdim=True)[0]).to(dtype=torch.int32)
+        input = torch.mul(mask, input)
+        return input
+       
+    def normalized2d(self, V):
         mask = (V == V.max(dim=1, keepdim=True)[0]).to(dtype=torch.int32)
         V = torch.mul(mask, V)
         return V
-
-    def normalized_O_(self, Oj):
-        Oj_on = F.relu(Oj)
-        mask = (Oj_on == Oj_on.max(dim=0, keepdim=True)[0]).to(dtype=torch.int32)
-        Oj = torch.mul(mask, Oj_on)
-        return Oj
-
-    def normalized_D_(self, Dj):
-        mask = (Dj == Dj.max(dim=0, keepdim=True)[0]).to(dtype=torch.int32)
-        Dj = torch.mul(mask, Dj)
-        return Dj
-
-    def normalized_F_(self,Fj):
-        mask = (Fj == Fj.max(dim=0, keepdim=True)[0]).to(dtype=torch.int32)
-        Fj = torch.mul(mask, Fj)
-        return Fj
-
-    def normalized_N_(self, Nj):
-        mask = (Nj == Nj.max(dim=0, keepdim=True)[0]).to(dtype=torch.int32)
-        Nj = torch.mul(mask, Nj)
-        return Nj
 
     def normalized_V(self, V):
         original = V
@@ -581,7 +574,7 @@ class arcscan():
             C_S2d = gaussianconv_2d(self.Cij, Gs_F, 5) 
             if i == 2:
                 B_denominator = 0.1 + Z_complex_cells[i] * (1 + 10**4 * C_S2d + sumvb) + 0.4 * self.Cij.sum()
-                B_molecular = Z_complex_cells[i] * (1 + 10**4 * C_S2d + sumvb)  #- 0.4 * C_Surface_contours.sum()
+                B_molecular = Z_complex_cells[i] * (1 + 10**4 * C_S2d + sumvb) - 0.4 * self.Cij.sum()
                 B = F.relu(B_molecular/B_denominator)
                 output.append(B)
             else:
@@ -597,28 +590,37 @@ def main():
     global argument
     argument = {}
 
-    img = data_process("/Users/leilei/Desktop/ARTSCAN/output.png")
-    #A.1. Retina and LGN cells
-    imgsc_on, imgsc_off = GaussianBlur(img, [5,17,41], sigmac = [0.3, 0.75, 2], sigmas = [1, 3, 7])
-    #A.2. V1 polarity-sensitive oriented simple cells
-    # model = fuzzy_ART(X_size=100 * 100, c_max=100, rho=0.85, alpha=0.00001, beta=1)
-    #A13
-    Y_ons, Y_offs = Gabor_conv(imgsc_on, imgsc_off, sigmav= [3, 4.5, 6], sigmah = [1, 1.5, 2], Lambda = [3, 5, 7], angles = [0, 45, 90, 135], K_size = [(19,19), (29,29), (39,39)])
-    #A16
-    Z = complex_cells(Y_ons, Y_offs)
-    type_input(Z, "Z", 1)
-    argument["Z"] = Z 
-    argument["imgsc_on"] = imgsc_on
-    argument["imgsc_off"] = imgsc_off
+    imgs = data_process("/Users/leilei/Desktop/ARTSCAN/2.jpg")
+    
     model1 = arcscan(size=(500,500))
+    if torch.cuda.is_available():
+        model1.cuda()
     eye_path = cv2.imread("/Users/leilei/Desktop/ARTSCAN/output.png")
-    max_index = [(int(model1.max_place[0]), int(model1.max_place[1]))]
-    for t in range(25):
+    
+    for t in range(300):
+        # if model1.eye_move:
+        img = imgs[:, :, model1.max_place_in_eye[0]-250:model1.max_place_in_eye[0]+250, model1.max_place_in_eye[1]-250:model1.max_place_in_eye[1]+250]
+        # else:
+        #     img = imgs[:, :, model1.max_place_in_eye[0]-250:model1.max_place_in_eye[0]+250, model1.max_place_in_eye[1]-250:model1.max_place_in_eye[1]+250]
+
+        #A.1. Retina and LGN cells
+        imgsc_on, imgsc_off = GaussianBlur(img, [5,17,41], sigmac = [0.3, 0.75, 2], sigmas = [1, 3, 7])
+        #A.2. V1 polarity-sensitive oriented simple cells
+        # model = fuzzy_ART(X_size=100 * 100, c_max=100, rho=0.85, alpha=0.00001, beta=1)
+        #A13
+        Y_ons, Y_offs = Gabor_conv(imgsc_on, imgsc_off, sigmav= [3, 4.5, 6], sigmah = [1, 1.5, 2], Lambda = [3, 5, 7], angles = [0, 45, 90, 135], K_size = [(19,19), (29,29), (39,39)])
+        #A16
+        Z = complex_cells(Y_ons, Y_offs)
+        type_input(Z, "Z", 1)
+        argument["Z"] = Z 
+        argument["imgsc_on"] = imgsc_on
+        argument["imgsc_off"] = imgsc_off
+
         model1.train(argument)
-        max_index.append((int(model1.max_place[0]), int(model1.max_place[1])))
         img1 = cv2.circle(eye_path,(int(model1.max_place[0]), int(model1.max_place[1])),5,(0,0,255),-1)
-        img1 = cv2.line(img1, max_index[t+1], max_index[t], (0, 255, 0), 2)
+        img1 = cv2.line(img1, model1.max_place_pre, model1.max_place, (0, 255, 0), 2)
         cv2.imwrite("/Users/leilei/Desktop/ARTSCAN/output_path.png", img1)
+           
 if __name__ == "__main__":
     main()
 

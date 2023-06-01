@@ -10,7 +10,7 @@ def gaussianKernel(ksize, sigma, c):
     kernel1d = np.sqrt(c) * np.exp(-(xs ** 2) / (2 * sigma ** 2)) # 计算一维卷积核# 根据指数函数性质，利用矩阵乘法快速计算二维卷积核    
     kernel2d = kernel1d[..., None] @ kernel1d[None, ...]   #@矩阵乘法 得到2维卷积核
     kernel2d = torch.from_numpy(kernel2d)    
-    kernel2d = kernel2d / kernel2d.sum() # 归一化
+    kernel2d = (kernel2d / kernel2d.sum()).to("cuda") # 归一化
 
     return kernel2d
 
@@ -32,13 +32,13 @@ def getGaussianKernel(ksizes, sigmac, sigmas):
         kernel1dc = np.exp(-(xs ** 2) / (2 * sigc ** 2)) # 计算一维卷积核# 根据指数函数性质，利用矩阵乘法快速计算二维卷积核    
         kernelc = kernel1dc[..., None] @ kernel1dc[None, ...]   #@矩阵乘法 得到2维卷积核
         kernelc = torch.from_numpy(kernelc)    
-        kernel_c.append(kernelc / kernelc.sum()) # 归一化
+        kernel_c.append((kernelc / kernelc.sum()).to("cuda")) # 归一化
 
         #Ds
         kernel1ds = np.exp(-(xs ** 2) / (2 * sigs ** 2))
         kernels = kernel1ds[..., None] @ kernel1ds[None, ...] 
         kernels = torch.from_numpy(kernels)    
-        kernel_s.append(kernels / kernels.sum()) 
+        kernel_s.append((kernels / kernels.sum()).to("cuda")) 
     # i = 0
     # for temps in range(len(kernel_c)):
     #     # for temp in range(len(Gabor_kernels[temps])): 
@@ -86,7 +86,7 @@ def Gabor_filter(K_size, sigmav, sigmah, Lambda, angles):  #K_size=111, Sigmav=1
             # gabor_pad[:,7:12] =  gabor[:,7:12]
             # cut = sum(sum(gabor)) - sum(sum(gabor_pad))
             # gabor /= np.sum(np.abs(gabor))
-            Gabor_kernel_angle.append(gabor / gabor.sum())
+            Gabor_kernel_angle.append((gabor / gabor.sum()).to("cuda"))
         Gabor_kernels.append(Gabor_kernel_angle)
     #画出卷积核
     # i = 0

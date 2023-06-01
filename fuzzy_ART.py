@@ -115,7 +115,7 @@ class conv_ART:
 class fuzzy_ART:
     def __init__(self, X_size, c_max, rho, alpha=0.00001, beta=1., self_supervision=True):
 
-        self.device="cpu"
+        self.device="cuda"
         self.M = X_size    # input vector size
         self.c_max = c_max # max categories
         self.rho = rho     # vigilance parameter

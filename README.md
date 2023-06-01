@@ -15,4 +15,8 @@
 python3 data_generation.py
 ```
 
+## 流程图
+
+![图片](./flow_chart.png)
+
 ## arcscan.py

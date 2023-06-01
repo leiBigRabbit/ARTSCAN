@@ -74,51 +74,52 @@ class arcscan():
         self.batch = 25
         self.category = category + 1
 
-        self.B = torch.zeros(size)
-        self.Object_surface_ons = [torch.zeros(size), torch.zeros(size), torch.zeros(size)]
-        self.Object_surface_offs = [torch.zeros(size), torch.zeros(size), torch.zeros(size)]
-        self.S_ij = torch.zeros(size)
-        self.Cij = torch.zeros(1, 1, size[0], size[1])
+        self.B = torch.zeros(size).to(self.device)
+        self.Object_surface_ons = [torch.zeros(size).to(self.device), torch.zeros(size).to(self.device), torch.zeros(size).to(self.device)]
+        self.Object_surface_offs = [torch.zeros(size).to(self.device), torch.zeros(size).to(self.device), torch.zeros(size).to(self.device)]
+        self.S_ij = torch.zeros(size).to(self.device)
+        self.Cij = torch.zeros(1, 1, size[0], size[1]).to(self.device)
 
-        self.Eij = torch.zeros(size)
-        self.Y_ijE = 2 * torch.ones(size)
+        self.Eij = torch.zeros(size).to(self.device)
+        self.Y_ijE = 2 * torch.ones(size).to(self.device)
 
-        self.Y_ijA = 2 * torch.ones(size)
-        self.Amn = torch.zeros(1, 1, size[0], size[1])
-        self.Sijf = torch.zeros(size)
-        self.W_ve = torch.ones((self.category,size[0],size[1]))
+        self.Y_ijA = 2 * torch.ones(size).to(self.device)
+        self.Amn = torch.zeros(1, 1, size[0], size[1]).to(self.device)
+        self.Sijf = torch.zeros(size).to(self.device)
+        # self.W_ve = torch.ones((self.category,size[0],size[1]))
+        self.W_ve = 0.01 * torch.ones((25, self.category, size[0], size[1])).to(self.device)
         
         self.fuzzy_ART = fuzzy_ART(X_size=100 * 100, c_max=self.category, rho=0.85, alpha=0.00001, beta=1)
-        self.W = torch.ones( (self.category, 20000) )
+        self.W = torch.ones( (self.category, 20000) ).to(self.device)
         self.t = t
-        self.Vjq = torch.zeros( (self.batch, self.category) )
+        self.Vjq = torch.zeros( (self.batch, self.category) ).to(self.device)
 
-        self.t_view = [{"Vjiq": torch.zeros( (self.batch, self.category) ),
-                        "Oj": torch.zeros( (self.category) ), 
-                        "Fj": torch.zeros( (self.category) ), 
-                        "Dj": torch.zeros( (self.category) ), 
-                        "Nj": torch.zeros( (self.category) )},
-                       {"Vjiq": torch.zeros( (self.batch, self.category) ),
-                        "Oj": torch.zeros( (self.category) ), 
-                        "Fj": torch.zeros( (self.category) ), 
-                        "Dj": torch.zeros( (self.category) ), 
-                        "Nj": torch.zeros( (self.category) )}]
+        self.t_view = [{"Vjiq": torch.zeros( (self.batch, self.category) ).to(self.device),
+                        "Oj": torch.zeros( (self.category) ).to(self.device), 
+                        "Fj": torch.zeros( (self.category) ).to(self.device), 
+                        "Dj": torch.zeros( (self.category) ).to(self.device), 
+                        "Nj": torch.zeros( (self.category) ).to(self.device)},
+                       {"Vjiq": torch.zeros( (self.batch, self.category) ).to(self.device),
+                        "Oj": torch.zeros( (self.category) ).to(self.device), 
+                        "Fj": torch.zeros( (self.category) ).to(self.device), 
+                        "Dj": torch.zeros( (self.category) ).to(self.device), 
+                        "Nj": torch.zeros( (self.category) ).to(self.device)}]
 
         #up
-        self.W_vo = torch.ones( (self.batch, self.category, self.category) )
-        self.W_ov = torch.ones( (self.batch, self.category, self.category) )
+        self.W_vo = 0.01 * torch.ones( (self.batch, self.category, self.category) ).to(self.device)
+        self.W_ov = 0.01 * torch.ones( (self.batch, self.category, self.category) ).to(self.device)
 
-        self.W_od = torch.ones( (self.category, self.category) )
-        self.W_df = torch.ones( (self.category, self.category) )
+        self.W_od = 0.01 * torch.ones( (self.category, self.category) ).to(self.device)
+        self.W_df = 0.01 * torch.ones( (self.category, self.category) ).to(self.device)
 
-        self.W_fn = torch.ones( (self.category, self.category) )
-        self.W_nf = torch.ones( (self.category, self.category) )
+        self.W_fn = 0.01 * torch.ones( (self.category, self.category) ).to(self.device)
+        self.W_nf = 0.01 * torch.ones( (self.category, self.category) ).to(self.device)
 
-        self.W_of = torch.ones( (self.category) )        
-        self.W_fo = torch.ones( (self.category) )
+        self.W_of = 0.01 * torch.ones( (self.category) ).to(self.device)    
+        self.W_fo = 0.01 * torch.ones( (self.category) ).to(self.device)
 
         self.Rwhere = Rwhere
-        self.yR = 2
+        self.yR = 0
 
         self.key = key
         self.G = self.get_G(self.key)
@@ -129,6 +130,7 @@ class arcscan():
         self.eye_move = False
         self.max_place = (249, 249)
         self.max_place_pre = (249, 249)
+        self.max_place_pre_in_eye = (499, 499)
         self.max_place_in_eye = (499, 499)
         self.K_e = 10**-7
 
@@ -142,15 +144,15 @@ class arcscan():
         imgsc_off = input["imgsc_off"]
         # for i in range(20):
         self.B = self.Boundaries(Z[0])
-        type_input(self.B, "B", 1)
+        # type_input(self.B, "B", 1)
         self.Object_surface_ons = self.Surface_filling_in_(self.B, self.Object_surface_ons, imgsc_on)
-        type_input(self.Object_surface_ons, "Object_surface_ons", 1)
+        # type_input(self.Object_surface_ons, "Object_surface_ons", 1)
         self.Object_surface_offs = self.Surface_filling_in_(self.B, self.Object_surface_offs, imgsc_off)
-        type_input(self.Object_surface_offs, "Object_surface_offs", 1)
+        # type_input(self.Object_surface_offs, "Object_surface_offs", 1)
         self.Cij = self.Surface_contours()
-        type_input(self.Cij, "Cij", 1)
+        # type_input(self.Cij, "Cij", 1)
         self.S_ij = 0.05 * (self.Object_surface_ons[0] + self.Object_surface_offs[0]) + 0.1 * (self.Object_surface_ons[1] + self.Object_surface_offs[1]) + 0.85 * (self.Object_surface_ons[2] + self.Object_surface_offs[2])
-        type_input(self.S_ij, "S_ij", 1)
+        # type_input(self.S_ij, "S_ij", 1)
         self.Eye_movements_map()
         self.Gain_field()
         self.attention_shroud()
@@ -162,24 +164,24 @@ class arcscan():
     # return self.B
     #view category integrators
     def part2_up(self, input):
-        self.Vjq = self.normalized2d(input)
+        self.Vjq = self.Normalized2d(input)
         value = self.t_view[0]
         #Vjiq
         Vjiq = (-0.01 * value["Vjiq"] + self.t * ((1 + torch.sum(self.W_ov * signal_m_function(value["Oj"]))) * (F.relu(self.Vjq) + self.G)) - self.Rwhere) * self.dt + value["Vjiq"]
         
         #A63
         Oj = value['Oj'] + self.dt * (-value['Oj'] + (1 + 2 * value['Fj'] * self.W_fo) * (0.5 * self.neuron3d(signal_m_function(F.relu(value['Vjiq'])), self.W_vo)  + self.G) - self.Rwhere)
-        Oj = self.normalized1d(Oj)
+        Oj = self.Normalized1d(F.relu(Oj))
         
         #A66
         Dj = -value['Dj'] + self.Uj + self.Tj + 0.1 * self.neuron1d(signal_m_function(value['Oj']), self.W_od)   #待修改
-        Dj = self.normalized1d(Dj)
+        Dj = self.Normalized1d(Dj)
 
         Fj = (-value['Fj'] + (0.5 * signal_m_function(value['Oj']) * self.W_of + self.G) * (1 + self.neuron1d(value['Dj'], self.W_df) + self.neuron1d(signal_m_function(value['Nj']), self.W_nf))) * self.dt * 20 + value['Fj']
-        Fj = self.normalized1d(Fj)
+        Fj = self.Normalized1d(Fj)
 
         Nj = (- value['Nj'] + self.neuron1d(signal_m_function(value['Fj']), self.W_fn) + self.Pj) * 20 * self.dt
-        Nj = self.normalized1d(Nj)
+        Nj = self.Normalized1d(Nj)
         value_dic = {"Vjiq":Vjiq, "Oj":Oj, "Dj":Dj, "Fj":Fj, "Nj":Nj}
         self.update(value_dic)
         
@@ -273,14 +275,15 @@ class arcscan():
 
         h_Eij = self.sign_h()
         if  h_Eij == 1:
-            sumve = 0
-            for i in range(self.Vjq.shape[0]):
-                sumve += (Vjq[i]* (self.Eij - self.W_ve).unsqueeze(dim=2)).sum()
-                self.W_ve = sumve * h_Eij * 500 * self.dt + self.W_ve
-        
-        sumvw = 0
-        for i in range(self.Vjq.shape[0]):
-            sumvw += (Vjq[i]*self.W_ve.unsqueeze(dim=2)).sum()
+            # for i in range(self.Vjq.shape[0]):
+            #     sumve += (Vjq[i] * (self.Eij - self.W_ve.transpose(0,2).transpose(1,3)).unsqueeze(dim=2))
+            #     self.W_ve = sumve * h_Eij * 500 * self.dt + self.W_ve
+            self.W_ve = (Vjq * (self.Eij - self.W_ve.transpose(0,2).transpose(1,3))).transpose(0,2).transpose(1,3)
+        # sumvw = 0
+        sumvw = torch.sum(torch.sum(Vjq * self.W_ve.transpose(0,2).transpose(1,3), dim=3),dim=2)
+        # for q in range(self.Vjq.shape[0]):
+        #     # for k in range(self.Vjq.shape[1]):
+        #         sumvw += torch.sum(Vjq[q]*self.W_ve[q].transpose(0,2),dim=2)
 
         Eij = F.relu(self.Cij)+625*inter_value_J + sumvw
         Eij = self.Y_ijE*(1-self.Eij.unsqueeze(dim=0).unsqueeze(dim=0))*Eij
@@ -296,10 +299,11 @@ class arcscan():
             self.max_place = (int(self.max_place[0]), int(self.max_place[1]))
             max_0 = self.max_place[0] - self.max_place_pre[0] + self.max_place_in_eye[0]
             max_1 = self.max_place[1] - self.max_place_pre[1] + self.max_place_in_eye[1]
-            self.max_place_in_eye[0] = self.max_restriction(max_0)
-            self.max_place_in_eye[1] = self.max_restriction(max_1)
+            self.max_place_in_eye = (self.max_restriction(max_0),self.max_restriction(max_1))
         else:
-            self.eye_move = False
+            self.eye_move = True
+            if self.eye_move:
+                print(self.max_place_in_eye, self.max_place)
             # self.Eij[self.max_place[0]][self.max_place[1]] = max_value
     def max_restriction(self, max_0):
             if max_0 > 749 :
@@ -369,137 +373,38 @@ class arcscan():
         V = torch.mul(mask, V)
         return V
 
-    def normalized_V(self, V):
-        original = V
-        result = torch.zeros_like(original)
-        key = torch.arange(0,original.shape[1],1)!=torch.arange(0,original.shape[1],1)
+    def Normalized2d(self, input):
+        output = []
+        for i in range(input.shape[0]):
+            output.append(self.Normalized1d(input[i]))
+        return torch.cat(output).reshape_as(input)
 
-        for i in range(original.shape[0]):
-            max_index = torch.argmax(original[i])
-            min_index = torch.argmin(original[i])
-            if sum(original[i][max_index] - original[i] >= 2) == original.shape[1] -1:
-                result[i][max_index] = original[i][max_index]
-                # part1 = [max_index, original[i][max_index]]
-                key = torch.arange(0,original.shape[1],1) == max_index
-            part2 = original[i][~key]
-            cut = torch.abs(original[i][~key].unsqueeze(dim=1)-part2)<=0.03
-            cut = torch.sum(cut,dim=1) >= original.shape[1]
-            if sum(cut) > 0 and  min(part2[~cut]) - max(part2[cut]) > -0.03:
-                index = index[~key][cut]
-                value = original[i][index] **2 / (torch.sum(part2)-original[i][index])
-                result[i][index] = value
-        Vjq = result        
-        # V[0][1] = 1.104 #example
-        # Vjq_value, _ = V.sort(descending=True)
-        # min_value = Vjq_value[:,-1:]
-        # max_value = Vjq_value[:,:1]
-        # Vjq_value = torch.cat((torch.arange(0, 25, 1).unsqueeze(dim = 1), Vjq_value), dim=1)  #增加一列index列
-        # key = torch.sum(((max_value - (Vjq_value[:,2:] + 0.03)) > 0), dim=1) == (Vjq_value.shape[1]-2)
-        # # key = key.expand(100,25).transpose(0,1)
-        # #A60/1
-        # part1 = Vjq_value[key]  
-        # #A60/2
-        # key2 = max_value[~key].squeeze(dim=1) - min_value[~key].squeeze(dim=1) < 0.03 #实验数据设置0.5546
-        # part2 = Vjq_value[~key][key2]
-        # part2[:,1:] = part2[:,1:] * (part2[:,1:] / torch.sum(part2[:,1:]))
+
+    def Normalized1d(self, input):
+        result = torch.zeros_like(input)
+
+        out, ind = input.sort(descending=True)
+        if (out[0] - out[1]) >0.1:
+            result[ind[0]] = out[0]
+            out = out[1:]
+            ind = ind[1:]
+
+        key = torch.abs(out[:-1] - out[1:])<=0.1
+        if torch.sum(key) == len(key):
+            key_0 = len(key)
+        elif torch.sum(key)==0:
+            return result
+        else:
+            key_0 = list(np.array(key)).index(0)
+
+        out2 = out[: key_0+1]
+        ind1 = ind[: key_0+1]
+
+        part2 = (out2/(torch.sum(out2))) * out2
+
+        result[ind1] = part2
         
-        # part3 = Vjq_value[~key][~key2]
-        # part3[:,1:] = part3[:,1:] * 0
-        # Vjq = torch.cat((part1,part2,part3),dim=0)
-        # # torch.masked_select(Vjq_value,key.expand(100,25).transpose(0,1))
-        # Vjq = sorted(Vjq, key = lambda x:x[0])
-        # Vjq = torch.tensor([item.cpu().detach().numpy() for item in Vjq])[:,1:]
-        return Vjq     
-
-    def normalized_N(self):
-        self.Nj, _ = self.Nj.sort(descending=True)
-        min_value = self.Nj[:,-1:]
-        max_value = self.Nj[:,:1]
-        self.Nj = torch.cat((torch.arange(0, 25, 1).unsqueeze(dim = 1), self.Nj), dim=1)  #增加一列index列
-        key = torch.sum(((max_value - (self.Nj[:,2:] + 0.1)) > 0), dim=1) == (self.Nj.shape[1]-2)
-        # key = key.expand(100,25).transpose(0,1)
-        #A60/1
-        part1 = self.Nj[key]  
-        #A60/2
-        key2 = max_value[~key].squeeze(dim=1) - min_value[~key].squeeze(dim=1) < 0.1 #实验数据设置0.5546
-        part2 = self.Nj[~key][key2]
-        part2[:,1:] = part2[:,1:] * (part2[:,1:] / torch.sum(part2[:,1:]))
-        
-        part3 = self.Nj[~key][~key2]
-        part3[:,1:] = part3[:,1:] * 0
-        self.Nj = torch.cat((part1,part2,part3),dim=0)
-        # torch.masked_select(Vjq_value,key.expand(100,25).transpose(0,1))
-        self.Nj = sorted(self.Nj, key = lambda x:x[0])
-        self.Nj = torch.tensor([item.cpu().detach().numpy() for item in self.Nj])[:,1:]
-        return self.Nj
-
-    def normalized_D(self):
-        self.Dj, _ = self.Dj.sort(descending=True)
-        min_value = self.Dj[:,-1:]
-        max_value = self.Dj[:,:1]
-        self.Dj = torch.cat((torch.arange(0, 25, 1).unsqueeze(dim = 1), self.Dj), dim=1)  #增加一列index列
-        key = torch.sum(((max_value - (self.Dj[:,2:] + 0.1)) > 0), dim=1) == (self.Dj.shape[1]-2)
-        # key = key.expand(100,25).transpose(0,1)
-        #A60/1
-        part1 = self.Dj[key]  
-        #A60/2
-        key2 = max_value[~key].squeeze(dim=1) - min_value[~key].squeeze(dim=1) < 0.1 #实验数据设置0.5546
-        part2 = self.Dj[~key][key2]
-        part2[:,1:] = part2[:,1:] * (part2[:,1:] / torch.sum(part2[:,1:]))
-        
-        part3 = self.Dj[~key][~key2]
-        part3[:,1:] = part3[:,1:] * 0
-        self.Dj = torch.cat((part1,part2,part3),dim=0)
-        # torch.masked_select(Vjq_value,key.expand(100,25).transpose(0,1))
-        self.Dj = sorted(self.Dj, key = lambda x:x[0])
-        self.Dj = torch.tensor([item.cpu().detach().numpy() for item in self.Dj])[:,1:]
-        return self.Dj
-
-    def normalized_F(self):
-        self.Fj, _ = self.Fj.sort(descending=True)
-        min_value = self.Fj[:,-1:]
-        max_value = self.Fj[:,:1]
-        self.Fj = torch.cat((torch.arange(0, 25, 1).unsqueeze(dim = 1), self.Fj), dim=1)  #增加一列index列
-        key = torch.sum(((max_value - (self.Fj[:,2:] + 0.5)) > 0), dim=1) == (self.Fj.shape[1]-2)
-        # key = key.expand(100,25).transpose(0,1)
-        #A60/1
-        part1 = self.Fj[key]  
-        #A60/2
-        key2 = max_value[~key].squeeze(dim=1) - min_value[~key].squeeze(dim=1) < 0.5 #实验数据设置0.5546
-        part2 = self.Fj[~key][key2]
-        part2[:,1:] = part2[:,1:] * (part2[:,1:] / torch.sum(part2[:,1:]))
-        
-        part3 = self.Fj[~key][~key2]
-        part3[:,1:] = part3[:,1:] * 0
-        self.Fj = torch.cat((part1,part2,part3),dim=0)
-        # torch.masked_select(Vjq_value,key.expand(100,25).transpose(0,1))
-        self.Fj = sorted(self.Fj, key = lambda x:x[0])
-        self.Fj = torch.tensor([item.cpu().detach().numpy() for item in self.Fj])[:,1:]
-        return self.Fj
-
-    def normalized_O(self):
-        Oj_on = F.relu(self.Oj)
-        Oj_on, _ = Oj_on.sort(descending=True)
-        min_value = Oj_on[0]
-        max_value = Oj_on[-1]
-
-        if max_value - Oj_on[1] > 0.3:
-            return Oj_on
-
-        Oj_on = torch.cat((torch.arange(0, 25, 1).unsqueeze(dim = 1), Oj_on), dim=1)
-        key = torch.sum(((max_value - (Oj_on[:,2:] + 0.3)) > 0), dim=1) == (Oj_on.shape[1]-2)
-        part1 = Oj_on[key] 
-
-        key2 = max_value[~key].squeeze(dim=1) - min_value[~key].squeeze(dim=1) < 0.3
-        part2 = Oj_on[~key][key2]
-        part2[:,1:] = part2[:,1:] * (part2[:,1:] / torch.sum(part2[:,1:]))
-        
-        part3 = Oj_on[~key][~key2]
-        part3[:,1:] = part3[:,1:] * 0
-        Oj_on = torch.cat((part1,part2,part3),dim=0)
-        Oj_on = sorted(Oj_on, key = lambda x:x[0])
-        Oj_on = torch.tensor([item.cpu().detach().numpy() for item in Oj_on])[:,1:]
-        return Oj_on
+        return result
 
     def build_Invariant_object_category(self, Vjiq):
         self.Oj = self.Oj + self.dt * (-self.Oj + (1 + 2 * self.Fj * self.W_fo) * (0.5 * torch.sum(signal_m_function(half_rectified_relu(Vjiq))* self.W_vo)  + self.G) - self.Rwhere)
@@ -517,7 +422,7 @@ class arcscan():
             return 0        
     
     def Vector_Bq(self, input):
-        input = torch.cat(torch.split(input[0][0], 100, 0),dim=1)
+        input = torch.cat(torch.split(input[2][0][0], 100, 0),dim=1)
         output = torch.split(input, 100, 1)
         output = torch.cat([fm.unsqueeze(0).reshape(-1,10000) for fm in output], dim=0)
         return output
@@ -564,7 +469,7 @@ class arcscan():
 
         sumvb = 0
         for i in range(self.Vjq.shape[0]):
-            sumvb += torch.sum(Vjq[i]*self.W.transpose(1,0))
+            sumvb += torch.sum(Vjq[i]*self.W[:,:10000].transpose(1,0))
 
         output = []
         for i in range(len(Z_complex_cells)):
@@ -590,18 +495,13 @@ def main():
     global argument
     argument = {}
 
-    imgs = data_process("/Users/leilei/Desktop/ARTSCAN/2.jpg")
+    imgs = data_process("./example.jpg", (1000, 1000))
     
     model1 = arcscan(size=(500,500))
-    if torch.cuda.is_available():
-        model1.cuda()
-    eye_path = cv2.imread("/Users/leilei/Desktop/ARTSCAN/output.png")
+    eye_path = cv2.imread("./example.jpg")
     
     for t in range(300):
-        # if model1.eye_move:
         img = imgs[:, :, model1.max_place_in_eye[0]-250:model1.max_place_in_eye[0]+250, model1.max_place_in_eye[1]-250:model1.max_place_in_eye[1]+250]
-        # else:
-        #     img = imgs[:, :, model1.max_place_in_eye[0]-250:model1.max_place_in_eye[0]+250, model1.max_place_in_eye[1]-250:model1.max_place_in_eye[1]+250]
 
         #A.1. Retina and LGN cells
         imgsc_on, imgsc_off = GaussianBlur(img, [5,17,41], sigmac = [0.3, 0.75, 2], sigmas = [1, 3, 7])
@@ -617,9 +517,11 @@ def main():
         argument["imgsc_off"] = imgsc_off
 
         model1.train(argument)
-        img1 = cv2.circle(eye_path,(int(model1.max_place[0]), int(model1.max_place[1])),5,(0,0,255),-1)
-        img1 = cv2.line(img1, model1.max_place_pre, model1.max_place, (0, 255, 0), 2)
-        cv2.imwrite("/Users/leilei/Desktop/ARTSCAN/output_path.png", img1)
+        print((int(model1.max_place[1]), int(model1.max_place[0])))
+        print((model1.max_place_pre[1],model1.max_place_pre[0]), (model1.max_place[1],model1.max_place[0]))
+        img1 = cv2.circle(eye_path,(int(model1.max_place[1]), int(model1.max_place[0])),5,(0,0,255),-1)
+        img1 = cv2.line(img1, (model1.max_place_pre[1],model1.max_place_pre[0]), (model1.max_place[1],model1.max_place[0]), (0, 255, 0), 2)
+        cv2.imwrite("./output_path.jpg", img1)
            
 if __name__ == "__main__":
     main()

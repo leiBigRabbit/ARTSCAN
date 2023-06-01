@@ -42,10 +42,10 @@ def Gabor_conv(imgsc_on, imgsc_off, sigmav, sigmah, Lambda, angles, K_size):
 
             Y_off = - Y_on
             #A13
-            Y_on = torch.where(Y_on < 0, 0, Y_on)
+            Y_on = torch.where(Y_on < 0, 0*Y_on, Y_on)
             Y_ons.append(Y_on)
             #A14
-            Y_off = torch.where(Y_off < 0, 0, Y_off)
+            Y_off = torch.where(Y_off < 0, 0*Y_off, Y_off)
             Y_offs.append(Y_off)
         Y_ons_all.append(Y_ons)
         Y_offs_all.append(Y_offs)

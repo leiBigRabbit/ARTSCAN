@@ -2,9 +2,11 @@ import torch
 import cv2
 import numpy as np
 import torch.nn.functional as F
-
+import os
 def write_img(input, name, devide):
-    name = "/Users/leilei/Desktop/artimg/" + name
+    if not os.path.exists("./artimg"):
+        os.mkdir("./artimg")
+    name = "./artimg/" + name
     if type(input) == torch.Tensor:
         if devide:
             try:
@@ -73,10 +75,10 @@ def neurotransmitter_yR(input, r_where, dt=0.05):
     output = 6 * (2 - input, -2 * input * r_where) * dt + input
     return output
 
-def data_process(url):
+def data_process(url, size):
     img = cv2.imread(url)
     img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    img = cv2.resize(img, (1000, 1000))
+    img = cv2.resize(img, size)
     img = torch.from_numpy(img)
     img = img.unsqueeze(dim=0).unsqueeze(dim=1).float()
     return img

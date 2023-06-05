@@ -12,8 +12,9 @@ from utils.utils import half_rectified, type_input, data_process, signal_m_funct
 from fuzzy_ART import fuzzy_ART
 from utils.utils import boundary_gated_diffusion, S_reduce_with_P, complex_cells
 import os
+
 class arcscan():
-    def __init__(self, size=(500, 500), category=12, dt = 0.001, t=0.6, Rwhere=0, key="up"):
+    def __init__(self, size=(500, 500), category=12, dt = 0.001, t=0.6, Rwhere=0, group=3, key="up"):
         self.device="cuda"
         self.dt = dt
         self.size = size
@@ -27,36 +28,64 @@ class arcscan():
         self.Cij = torch.zeros(1, 1, size[0], size[1]).to(self.device)
 
         self.Eij = torch.zeros(size).to(self.device)
-        self.Y_ijE = 2 * torch.ones(size).to(self.device)
+        self.Y_ijE = torch.ones(size).to(self.device) *2
 
-        self.Y_ijA = 2 * torch.ones(size).to(self.device)
+        self.Y_ijA = torch.ones(size).to(self.device) *2
         self.Amn = torch.zeros(1, 1, size[0], size[1]).to(self.device)
         self.Sijf = torch.zeros(size).to(self.device)
         # self.W_ve = torch.ones((self.category,size[0],size[1]))
-        self.W_ve = 0.01 * torch.ones((25, self.category, size[0], size[1])).to(self.device)
+        self.W_ve = 0.01 * torch.ones((25, 144, size[0], size[1])).to(self.device)
         
-        self.fuzzy_ART = fuzzy_ART(X_size=100 * 100, c_max=self.category, rho=0.85, alpha=0.00001, beta=1)
-        self.W = torch.ones( (self.category, 20000) ).to(self.device)
+        self.fuzzy_ART = fuzzy_ART(X_size=100 * 100, c_max=144, rho=0.85, alpha=0.00001, beta=1)
+        self.W = torch.ones( (144, 20000) ).to(self.device)
         self.t = t
-        self.Vjq = torch.zeros( (self.batch, self.category) ).to(self.device)
+        self.Vjq = torch.zeros( (self.batch, 144) ).to(self.device)
 
-        self.t_view = [{"Vjiq": torch.zeros( (self.batch, self.category) ).to(self.device),
+        self.group = group
+        Dj = torch.zeros( (self.category) ).to(self.device)
+        Dj = torch.chunk(Dj, self.group, dim=0)
+
+        ind = [i.shape[0] for i in Dj]
+        self.index = [0]
+        for n in range(len(ind)):
+            self.index.append(sum(ind[:n+1]))
+
+        # self.index = [[i*Dj[i].shape[0], i*Dj[i].shape[0] + Dj[i].shape[0]] for i in range(len(Dj))]
+
+        self.W_od = []
+        for i in range(len(Dj)):
+            self.W_od.append(0.01 * torch.ones( (Dj[i].shape[0], Dj[i].shape[0]) ).to(self.device))
+        
+        self.W_df = []
+        for i in range(len(Dj)):
+            self.W_df.append(0.01 * torch.ones( (Dj[i].shape[0], Dj[i].shape[0]) ).to(self.device))
+        
+        # Dj = []
+        # for i in self.group:
+        #     Dj.append(torch.zeros( (self.group) ).to(self.device))
+
+        self.t_view = [{"Vjiq": torch.zeros( (self.batch, 144) ).to(self.device),
                         "Oj": torch.zeros( (self.category) ).to(self.device), 
                         "Fj": torch.zeros( (self.category) ).to(self.device), 
-                        "Dj": torch.zeros( (self.category) ).to(self.device), 
+                        # "Dj": torch.zeros( (self.group) ).to(self.device), 
+                        "Dj": Dj,
                         "Nj": torch.zeros( (self.category) ).to(self.device)},
-                       {"Vjiq": torch.zeros( (self.batch, self.category) ).to(self.device),
+                       {"Vjiq": torch.zeros( (self.batch, 144) ).to(self.device),
                         "Oj": torch.zeros( (self.category) ).to(self.device), 
                         "Fj": torch.zeros( (self.category) ).to(self.device), 
-                        "Dj": torch.zeros( (self.category) ).to(self.device), 
+                        # "Dj": torch.zeros( (self.category) ).to(self.device), 
+                        "Dj": Dj,
                         "Nj": torch.zeros( (self.category) ).to(self.device)}]
 
         #up
-        self.W_vo = 0.01 * torch.ones( (self.batch, self.category, self.category) ).to(self.device)
-        self.W_ov = 0.01 * torch.ones( (self.batch, self.category, self.category) ).to(self.device)
+        self.W_vo = 0.01 * torch.ones( (self.batch, 144, self.category) ).to(self.device)
+        self.W_ov = 0.01 * torch.ones( (self.batch, self.category, 144) ).to(self.device)
+        
+        # self.W_od = 0.01 * torch.ones( (self.category, self.category) ).to(self.device)
 
-        self.W_od = 0.01 * torch.ones( (self.category, self.category) ).to(self.device)
-        self.W_df = 0.01 * torch.ones( (self.category, self.category) ).to(self.device)
+        # self.W_od = torch.chunk(self.W_od, self.group, dim=0)
+
+
 
         self.W_fn = 0.01 * torch.ones( (self.category, self.category) ).to(self.device)
         self.W_nf = 0.01 * torch.ones( (self.category, self.category) ).to(self.device)
@@ -127,18 +156,30 @@ class arcscan():
         self.Vjq = self.Normalized2d(input)
         value = self.t_view[0]
         #Vjiq
-        Vjiq = (-0.01 * value["Vjiq"] + self.t * ((1 + torch.sum(self.W_ov * signal_m_function(value["Oj"]))) * (F.relu(self.Vjq) + self.G)) - self.Rwhere) * self.dt + value["Vjiq"]
+        Vjiq = (-0.01 * value["Vjiq"] + self.t * ((1 + torch.sum(self.W_ov.transpose(1,2) * signal_m_function(value["Oj"]))) * (F.relu(self.Vjq) + self.G)) - self.Rwhere) * self.dt + value["Vjiq"]
         
         #A63
         Oj = value['Oj'] + self.dt * (-value['Oj'] + (1 + 2 * value['Fj'] * self.W_fo) * (0.5 * self.neuron3d(signal_m_function(F.relu(value['Vjiq'])), self.W_vo)  + self.G) - self.Rwhere)
         Oj = self.Normalized1d(F.relu(Oj))
         
         #A66
-        Dj = -value['Dj'] + self.Uj + self.Tj + 0.1 * self.neuron1d(signal_m_function(value['Oj']), self.W_od)   #待修改
-        Dj = self.Normalized1d(Dj)
-
-        Fj = (-value['Fj'] + (0.5 * signal_m_function(value['Oj']) * self.W_of + self.G) * (1 + self.neuron1d(value['Dj'], self.W_df) + self.neuron1d(signal_m_function(value['Nj']), self.W_nf))) * self.dt * 20 + value['Fj']
-        Fj = self.Normalized1d(Fj)
+        Dj = []
+        for i in range(len(value['Dj'])):
+            dj = value['Dj'][i]
+            dj_ = (dj + self.Uj + self.Tj + 0.1 * self.neuron1d(signal_m_function(value['Oj'][self.index[i]:self.index[i+1]]), self.W_od[i])) 
+            Dj.append(self.Normalized1d(dj_))
+        # Dj = -value['Dj'] + self.Uj + self.Tj + 0.1 * self.neuron1d(signal_m_function(value['Oj']), self.W_od)   #待修改
+        
+        Fj = []
+        for i in range(len(value['Dj'])):
+            fj = value['Fj'][self.index[i]:self.index[i+1]]
+            fj_ = (-fj + (0.5 * signal_m_function(value['Oj'][self.index[i]:self.index[i+1]]) * self.W_of[self.index[i]:self.index[i+1]] + self.G) * 
+                   (1 + self.neuron1d(value['Dj'][i], self.W_df[i]) + self.neuron1d(signal_m_function(value['Nj'][self.index[i]:self.index[i+1]]), self.W_nf[self.index[i]:self.index[i+1]]))) * self.dt * 20 
+            + value['Fj'][self.index[i]:self.index[i+1]]
+            Fj.append(self.Normalized1d(fj_))
+        Fj = torch.cat(Fj, dim=0)
+        # Fj = (-value['Fj'] + (0.5 * signal_m_function(value['Oj']) * self.W_of + self.G) * (1 + self.neuron1d(value['Dj'], self.W_df) + self.neuron1d(signal_m_function(value['Nj']), self.W_nf))) * self.dt * 20 + value['Fj']
+        # Fj = self.Normalized1d(Fj)
 
         Nj = (- value['Nj'] + self.neuron1d(signal_m_function(value['Fj']), self.W_fn) + self.Pj) * 20 * self.dt
         Nj = self.Normalized1d(Nj)
@@ -166,15 +207,23 @@ class arcscan():
     def part2_down(self):
         value = self.t_view[1]
         #A75
-        self.W_ov = (signal_m_function(value['Oj']) * F.relu(value['Vjiq']).unsqueeze(dim=2) * self.W_reduce(F.relu(value['Vjiq']), self.W_ov)) * self.dt/50 + self.W_ov
+        self.W_ov = ((signal_m_function(value['Oj']) * F.relu(value['Vjiq']).unsqueeze(dim=2)).transpose(2,1) * self.W_reduce(F.relu(value['Vjiq']), self.W_ov)) * self.dt/50 + self.W_ov
         #A76
         self.W_of = (signal_m_function(value['Oj'])* self.W_reduce(signal_m_function(value['Fj']), self.W_of)) * self.dt / 50 + self.W_of
         #A77
         self.W_fo = (signal_m_function(value['Fj']) * signal_m_function(value['Oj']) * self.W_reduce(signal_m_function(value['Oj']), self.W_fo)) * self.dt/50 + self.W_fo
         #A78
-        self.W_od = signal_m_function(value['Oj']) * signal_m_function(value['Dj']) * self.W_reduce(signal_m_function(value['Dj']), self.W_od) * self.dt / 50 + self.W_od
+
+        # self.W_od = signal_m_function(value['Oj']) * signal_m_function(value['Dj']) * self.W_reduce(signal_m_function(value['Dj']), self.W_od) * self.dt / 50 + self.W_od
+        for i in range(self.group):
+            self.W_od[i] = signal_m_function(value['Oj'][self.index[i]:self.index[i+1]])* signal_m_function(value['Dj'][i]) * self.W_reduce(signal_m_function(value['Dj'][i]), self.W_od[i]) * self.dt / 50 + self.W_od[i]
+
         #A79
-        self.W_df = signal_m_function(value['Dj']) * signal_m_function(value['Fj']) * self.W_reduce(signal_m_function(value['Fj']), self.W_df) * self.dt/50+ self.W_df
+        # self.W_df = signal_m_function(value['Dj']) * signal_m_function(value['Fj']) * self.W_reduce(signal_m_function(value['Fj']), self.W_df) * self.dt/50+ self.W_df
+        for i in range(self.group):
+            self.W_df[i] = signal_m_function(value['Dj'][i]) * signal_m_function(value['Fj'][self.index[i]:self.index[i+1]]) * self.W_reduce(signal_m_function(value['Fj'][self.index[i]:self.index[i+1]]), self.W_df[i]) * self.dt/50+ self.W_df[i]
+            # self.W_df = signal_m_function(value['Dj'][self.index[i]:self.index[i+1]]) * signal_m_function(value['Dj'][i]) * self.W_reduce(signal_m_function(value['Dj'][i]), self.W_od[i]) * self.dt / 50 + self.W_od[i]
+        
         #80
         self.W_fn = signal_m_function(value['Fj']) * self.W_reduce(signal_m_function(value['Nj']), self.W_fn) * self.dt /50 + self.W_fn
         
@@ -185,13 +234,13 @@ class arcscan():
     def W_reduce(self, input, W):
         output = []
         for i in range(input.shape[0]):
-            output.append((input[i]-W[i]).unsqueeze(dim=0))
+            output.append((input[i] - W[i]).unsqueeze(dim=0))
         return torch.cat(output,dim=0)
 
     def train(self, input):
         self.part1(input)
         input_B = self.Vector_Bq(self.B)
-        _,_,self.W,V = self.fuzzy_ART.train_(input_B, self.t_view[0]["Vjiq"])
+        _, _, self.W,V = self.fuzzy_ART.train_(input_B, self.t_view[0]["Vjiq"])
         self.part2_up(V)
         self.part2_down()
 
@@ -238,7 +287,7 @@ class arcscan():
             # for i in range(self.Vjq.shape[0]):
             #     sumve += (Vjq[i] * (self.Eij - self.W_ve.transpose(0,2).transpose(1,3)).unsqueeze(dim=2))
             #     self.W_ve = sumve * h_Eij * 500 * self.dt + self.W_ve
-            self.W_ve = (Vjq * (self.Eij - self.W_ve.transpose(0,2).transpose(1,3))).transpose(0,2).transpose(1,3)
+            self.W_ve = (Vjq * (self.Eij - self.W_ve).transpose(0,2).transpose(1,3)).transpose(0,2).transpose(1,3)
         # sumvw = 0
         sumvw = torch.sum(torch.sum(Vjq * self.W_ve.transpose(0,2).transpose(1,3), dim=3),dim=2)
         # for q in range(self.Vjq.shape[0]):
@@ -452,7 +501,7 @@ class arcscan():
 
 
 def main():
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
     global argument
     argument = {}
@@ -460,7 +509,7 @@ def main():
     imgs = data_process("./example.jpg", (1000, 1000))
     
     model1 = arcscan(size=(500,500))
-    eye_path = cv2.imread("./example.jpg")
+    eye_path = cv2.imread("./output.png")
     
     for t in range(300):
         img = imgs[:, :, model1.max_place_in_eye[0]-250:model1.max_place_in_eye[0]+250, model1.max_place_in_eye[1]-250:model1.max_place_in_eye[1]+250]

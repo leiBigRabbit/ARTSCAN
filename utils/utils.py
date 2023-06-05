@@ -65,6 +65,7 @@ def complex_cells(Y_ons, Y_offs):
     return output
 
 
+
 def write_img(input, name, devide):
     if not os.path.exists("./artimg"):
         os.mkdir("./artimg")
